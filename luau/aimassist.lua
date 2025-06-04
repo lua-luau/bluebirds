@@ -6,7 +6,7 @@ end
 local Aimbot = {}
 getgenv().Aimbot = Aimbot
 
--- Settings
+-- Settings can be overridden per user/module  
 Aimbot.Settings = {  
 	AimFOV = 35,  
 	MinAssist = 0.05,  
@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,  
 	LOSParts = {"Head", "HumanoidRootPart"},  
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },  
-	CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position
+	CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position (X,Y)
 }
 
 local Players = game:GetService("Players")
@@ -152,12 +152,12 @@ function Aimbot.Start()
 			local screenPoint = getCustomCrosshair()
 			local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
 			local aimOrigin = ray.Origin
-			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
 
 			local assistStrength = Aimbot.Settings.MinAssist +
 				((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + aimDirection)
+			local aimDir = (targetData.PredictedPos - aimOrigin).Unit
+			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + aimDir)
 			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
 		end
 	end)
