@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.3) -- normalized screen position (x=0.5 center horizontally, y=0.3 higher than center)
+	CustomCrosshair = Vector2.new(0.5, 0.3)
 }
 
 local Players = game:GetService("Players")
@@ -84,26 +84,24 @@ local function getClosestTarget()
 	refreshPlayerCache()
 	local best, bestScore = nil, -math.huge
 	local camPos = Camera.CFrame.Position
-	local screenPoint = getCustomCrosshair()
-	local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
-	local aimOrigin = ray.Origin
-	local aimDirection = ray.Direction.Unit
+	local circleCenter = fovCircle.Position
+	local radius = fovCircle.Radius
 
 	for _, otherPlayer in ipairs(cachedPlayers) do
 		if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild(Aimbot.Settings.TargetPart) then
 			if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= player.Team then
 				local part = otherPlayer.Character[Aimbot.Settings.TargetPart]
 				local predictedPos = getPredictedPosition(part)
-				local toTarget = (predictedPos - aimOrigin).Unit
-				local angle = math.deg(math.acos(math.clamp(aimDirection:Dot(toTarget), -1, 1)))
-				if angle <= Aimbot.Settings.AimFOV then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
-					if onScreen then
+				local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+				if onScreen then
+					local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - circleCenter).Magnitude
+					if screenDist <= radius then
 						local dist = (part.Position - camPos).Magnitude
 						local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
 						if losOK then
+							local screenScore = (1 - (screenDist / radius))
 							local score =
-								((1 - (angle / Aimbot.Settings.AimFOV)) * Aimbot.Settings.ScoreWeights.FOV) +
+								(screenScore * Aimbot.Settings.ScoreWeights.FOV) +
 								((1 / dist) * Aimbot.Settings.ScoreWeights.Distance)
 
 							if score > bestScore then
@@ -111,7 +109,7 @@ local function getClosestTarget()
 								best = {
 									Part = part,
 									PredictedPos = predictedPos,
-									Angle = angle,
+									ScreenDist = screenDist,
 									Distance = dist,
 									ScreenPos = screenPos
 								}
@@ -154,9 +152,8 @@ function Aimbot.Start()
 		local targetData = getClosestTarget()
 		if targetData then
 			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
-
 			local assistStrength = Aimbot.Settings.MinAssist +
-				((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
+				((1 - (targetData.ScreenDist / fovCircle.Radius)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
 			local newLookTo = aimOrigin + aimDirection
 			local newCFrame = CFrame.new(Camera.CFrame.Position, newLookTo)
@@ -168,4 +165,4 @@ end
 return Aimbot
 
 
--- why im i here just to suffer 
+--- IDK WHAT IM DOING BRUH --
