@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.3) -- normalized screen position (center = 0.5, 0.5)
+	CustomCrosshair = Vector2.new(0.5, 0.3) -- normalized screen position (x=0.5 center horizontally, y=0.3 higher than center)
 }
 
 local Players = game:GetService("Players")
@@ -113,8 +113,7 @@ local function getClosestTarget()
 									PredictedPos = predictedPos,
 									Angle = angle,
 									Distance = dist,
-									ScreenPos = screenPos,
-									AimOrigin = aimOrigin
+									ScreenPos = screenPos
 								}
 							end
 						end
