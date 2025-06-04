@@ -12,7 +12,6 @@ Aimbot.Settings = {
 	MinAssist = 0.05,
 	MaxAssist = 0.35,
 	PingFallback = 50,
-	EnableFOVSync = true,
 	ShowFOVCircle = true,
 	TeamCheck = false,
 	UseLineOfSight = true,
@@ -20,7 +19,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.3) -- normalized screen position
+	CustomCrosshair = Vector2.new(0.5, 0.3)
 }
 
 local Players = game:GetService("Players")
@@ -28,15 +27,10 @@ local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 
--- Cleanup visuals
-if getgenv().AimbotFOVCircle then
-	getgenv().AimbotFOVCircle:Remove()
-end
-if getgenv().AimbotDot then
-	getgenv().AimbotDot:Remove()
-end
+-- Clean visuals
+if getgenv().AimbotFOVCircle then getgenv().AimbotFOVCircle:Remove() end
+if getgenv().AimbotDot then getgenv().AimbotDot:Remove() end
 
--- Drawing: FOV Circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Color = Color3.fromRGB(0, 255, 0)
 fovCircle.Thickness = 2
@@ -45,15 +39,13 @@ fovCircle.Transparency = 0.4
 fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
 getgenv().AimbotFOVCircle = fovCircle
 
--- Drawing: Custom crosshair dot
 local dot = Drawing.new("Circle")
-dot.Color = Color3.fromRGB(255, 255, 255)
+dot.Color = Color3.new(1, 1, 1)
 dot.Filled = true
 dot.Radius = 2
 dot.Visible = true
 getgenv().AimbotDot = dot
 
--- Player cache
 local cachedPlayers, lastPlayerCache = {}, 0
 local function refreshPlayerCache()
 	if tick() - lastPlayerCache > 0.25 then
@@ -110,18 +102,15 @@ local function getClosestTarget()
 						local dist = (part.Position - camPos).Magnitude
 						local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
 						if losOK then
-							local screenScore = (1 - (screenDist / radius))
 							local score =
-								(screenScore * Aimbot.Settings.ScoreWeights.FOV) +
+								((1 - (screenDist / radius)) * Aimbot.Settings.ScoreWeights.FOV) +
 								((1 / dist) * Aimbot.Settings.ScoreWeights.Distance)
 
 							if score > bestScore then
 								bestScore = score
 								best = {
-									Part = part,
 									PredictedPos = predictedPos,
-									ScreenDist = screenDist,
-									ScreenPos = screenPos
+									ScreenDist = screenDist
 								}
 							end
 						end
@@ -135,14 +124,12 @@ local function getClosestTarget()
 end
 
 local function updateVisuals()
-	if not Camera then return end
-
 	local screenHeight = Camera.ViewportSize.Y
 	local camFOV = Camera.FieldOfView
 	local scale = math.tan(math.rad(Aimbot.Settings.AimFOV / 2)) / math.tan(math.rad(camFOV / 2))
 	local radius = (screenHeight / 2) * scale
-
 	local crosshairPos = getCustomCrosshair()
+
 	fovCircle.Position = crosshairPos
 	fovCircle.Radius = radius
 	fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
@@ -151,7 +138,7 @@ local function updateVisuals()
 	dot.Visible = true
 end
 
--- Start logic
+-- Aimbot loop
 function Aimbot.Start()
 	RunService.RenderStepped:Connect(function()
 		if not player.Character or not Camera then return end
@@ -159,24 +146,22 @@ function Aimbot.Start()
 		updateVisuals()
 
 		local crosshairPos = getCustomCrosshair()
+		local ray = Camera:ScreenPointToRay(crosshairPos.X, crosshairPos.Y)
+		local rayOrigin = ray.Origin
+		local rayDirection = ray.Direction.Unit
+
 		local targetData = getClosestTarget()
 		if not targetData then return end
 
-		local screenPos = targetData.ScreenPos
-		local dx = screenPos.X - crosshairPos.X
-		local dy = screenPos.Y - crosshairPos.Y
+		local targetDirection = (targetData.PredictedPos - rayOrigin).Unit
+		local angleDiff = math.acos(math.clamp(rayDirection:Dot(targetDirection), -1, 1))
 
 		local assistStrength = Aimbot.Settings.MinAssist +
 			((1 - (targetData.ScreenDist / fovCircle.Radius)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-		-- Convert screen delta to angular rotation
-		local moveX = dx / Camera.ViewportSize.X
-		local moveY = dy / Camera.ViewportSize.Y
-
-		-- Apply angle adjustments (horizontal then vertical)
-		local currentRot = Camera.CFrame - Camera.CFrame.Position
-		local newRot = CFrame.Angles(-moveY * assistStrength, -moveX * assistStrength, 0) * currentRot
-		Camera.CFrame = CFrame.new(Camera.CFrame.Position) * newRot
+		local blendedDirection = rayDirection:Lerp(targetDirection, assistStrength).Unit
+		local newCF = CFrame.new(Camera.CFrame.Position, rayOrigin + blendedDirection)
+		Camera.CFrame = newCF
 	end)
 end
 
