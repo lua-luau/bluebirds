@@ -166,3 +166,6 @@ function Aimbot.Start()
 end
 
 return Aimbot
+
+
+-- why im i here just to suffer 
