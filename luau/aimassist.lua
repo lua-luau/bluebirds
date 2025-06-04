@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position
+	CustomCrosshair = Vector2.new(0.5, 0.5) -- Normalized screen pos (0.5, 0.5 = center)
 }
 
 local Players = game:GetService("Players")
@@ -30,8 +30,8 @@ local player = Players.LocalPlayer
 
 -- Remove any existing FOV circle
 if getgenv().AimbotFOVCircle then
-    getgenv().AimbotFOVCircle:Remove()
-    getgenv().AimbotFOVCircle = nil
+	getgenv().AimbotFOVCircle:Remove()
+	getgenv().AimbotFOVCircle = nil
 end
 
 -- Create Drawing Circle
@@ -151,12 +151,15 @@ function Aimbot.Start()
 		if targetData then
 			local screenPoint = getCustomCrosshair()
 			local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
-			local aimDirection = ray.Direction.Unit
+			local aimOrigin = ray.Origin
+			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
 
 			local assistStrength = Aimbot.Settings.MinAssist +
 				((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + aimDirection)
+			local newLookAt = aimOrigin + aimDirection
+			local newCFrame = CFrame.new(Camera.CFrame.Position, newLookAt)
+
 			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
 		end
 	end)
