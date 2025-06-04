@@ -28,13 +28,15 @@ local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 
--- Remove any existing FOV circle
+-- Cleanup previous visuals
 if getgenv().AimbotFOVCircle then
 	getgenv().AimbotFOVCircle:Remove()
-	getgenv().AimbotFOVCircle = nil
+end
+if getgenv().AimbotDot then
+	getgenv().AimbotDot:Remove()
 end
 
--- Create Drawing Circle
+-- Create FOV circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Color = Color3.fromRGB(0, 255, 0)
 fovCircle.Thickness = 2
@@ -43,7 +45,15 @@ fovCircle.Transparency = 0.4
 fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
 getgenv().AimbotFOVCircle = fovCircle
 
--- Cache players
+-- Create custom crosshair dot
+local dot = Drawing.new("Circle")
+dot.Color = Color3.fromRGB(255, 255, 255)
+dot.Filled = true
+dot.Radius = 2
+dot.Visible = true
+getgenv().AimbotDot = dot
+
+-- Player cache
 local cachedPlayers, lastPlayerCache = {}, 0
 local function refreshPlayerCache()
 	if tick() - lastPlayerCache > 0.25 then
@@ -125,40 +135,47 @@ local function getClosestTarget()
 	return best
 end
 
-local function updateFOVCircle()
-	if not Aimbot.Settings.ShowFOVCircle then
-		fovCircle.Visible = false
-		return
-	end
+local function updateVisuals()
+	if not Camera then return end
 
-	local camFOV = Camera.FieldOfView
 	local screenHeight = Camera.ViewportSize.Y
+	local camFOV = Camera.FieldOfView
 	local scale = math.tan(math.rad(Aimbot.Settings.AimFOV / 2)) / math.tan(math.rad(camFOV / 2))
-	fovCircle.Radius = (screenHeight / 2) * scale
-	fovCircle.Position = getCustomCrosshair()
-	fovCircle.Visible = true
+	local radius = (screenHeight / 2) * scale
+
+	local crosshairPos = getCustomCrosshair()
+	fovCircle.Position = crosshairPos
+	fovCircle.Radius = radius
+	fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
+
+	dot.Position = crosshairPos
+	dot.Visible = true
 end
 
--- Public Start Function
+-- Main loop
 function Aimbot.Start()
 	RunService.RenderStepped:Connect(function()
 		if not player.Character or not Camera then return end
 
-		updateFOVCircle()
+		updateVisuals()
 
 		local crosshairPos = getCustomCrosshair()
 		local ray = Camera:ScreenPointToRay(crosshairPos.X, crosshairPos.Y)
-		local aimOrigin = ray.Origin
+		local crosshairOrigin = ray.Origin
+		local crosshairDir = ray.Direction.Unit
 
 		local targetData = getClosestTarget()
 		if targetData then
-			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
+			-- Actual direction to predicted target
+			local toTarget = (targetData.PredictedPos - Camera.CFrame.Position).Unit
+
+			-- Lerp between current crosshair direction and the target direction
 			local assistStrength = Aimbot.Settings.MinAssist +
 				((1 - (targetData.ScreenDist / fovCircle.Radius)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-			local newLookTo = aimOrigin + aimDirection
-			local newCFrame = CFrame.new(aimOrigin, newLookTo)
-			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
+			local newDir = crosshairDir:Lerp(toTarget, assistStrength).Unit
+			local newLook = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + newDir)
+			Camera.CFrame = newLook
 		end
 	end)
 end
