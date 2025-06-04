@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.5) -- Normalized screen pos (0.5, 0.5 = center)
+	CustomCrosshair = Vector2.new(0.5, 0.3) -- normalized screen position (center = 0.5, 0.5)
 }
 
 local Players = game:GetService("Players")
@@ -113,7 +113,8 @@ local function getClosestTarget()
 									PredictedPos = predictedPos,
 									Angle = angle,
 									Distance = dist,
-									ScreenPos = screenPos
+									ScreenPos = screenPos,
+									AimOrigin = aimOrigin
 								}
 							end
 						end
@@ -147,19 +148,19 @@ function Aimbot.Start()
 
 		updateFOVCircle()
 
+		local screenPoint = getCustomCrosshair()
+		local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
+		local aimOrigin = ray.Origin
+
 		local targetData = getClosestTarget()
 		if targetData then
-			local screenPoint = getCustomCrosshair()
-			local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
-			local aimOrigin = ray.Origin
 			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
 
 			local assistStrength = Aimbot.Settings.MinAssist +
 				((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-			local newLookAt = aimOrigin + aimDirection
-			local newCFrame = CFrame.new(Camera.CFrame.Position, newLookAt)
-
+			local newLookTo = aimOrigin + aimDirection
+			local newCFrame = CFrame.new(Camera.CFrame.Position, newLookTo)
 			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
 		end
 	end)
