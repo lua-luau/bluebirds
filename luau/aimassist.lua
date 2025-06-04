@@ -1,22 +1,26 @@
--- ?
+-- Prevent duplicate aimbot instance
+if getgenv().Aimbot then
+    return getgenv().Aimbot
+end
 
 local Aimbot = {}
+getgenv().Aimbot = Aimbot
 
--- Settings can be overridden per user/module
-Aimbot.Settings = {
-	AimFOV = 35,
-	MinAssist = 0.05,
-	MaxAssist = 0.35,
-	PingFallback = 50,
-	EnableFOVSync = true,
-	ShowFOVCircle = true,
-	TeamCheck = false,
-	UseLineOfSight = true,
-	TargetPart = "Head",
-	MaxPredictionTime = 0.2,
-	LOSParts = {"Head", "HumanoidRootPart"},
-	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = nil -- set to Vector2 (0-1 range, like UDim2.Scale)
+-- Settings can be overridden per user/module  
+Aimbot.Settings = {  
+	AimFOV = 35,  
+	MinAssist = 0.05,  
+	MaxAssist = 0.35,  
+	PingFallback = 50,  
+	EnableFOVSync = true,  
+	ShowFOVCircle = true,  
+	TeamCheck = false,  
+	UseLineOfSight = true,  
+	TargetPart = "Head",  
+	MaxPredictionTime = 0.2,  
+	LOSParts = {"Head", "HumanoidRootPart"},  
+	ScoreWeights = { FOV = 0.6, Distance = 0.4 },  
+	CustomCrosshair = nil -- set to Vector2 (0-1 range, like UDim2.Scale)  
 }
 
 local Players = game:GetService("Players")
@@ -24,13 +28,20 @@ local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 
--- Drawing Circle
+-- Remove any existing FOV circle
+if getgenv().AimbotFOVCircle then
+    getgenv().AimbotFOVCircle:Remove()
+    getgenv().AimbotFOVCircle = nil
+end
+
+-- Create Drawing Circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Color = Color3.fromRGB(0, 255, 0)
 fovCircle.Thickness = 2
 fovCircle.Filled = false
 fovCircle.Transparency = 0.4
 fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
+getgenv().AimbotFOVCircle = fovCircle
 
 local cachedPlayers, lastPlayerCache = {}, 0
 local function refreshPlayerCache()
