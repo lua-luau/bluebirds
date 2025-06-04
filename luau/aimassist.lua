@@ -20,7 +20,7 @@ Aimbot.Settings = {
 	MaxPredictionTime = 0.2,
 	LOSParts = {"Head", "HumanoidRootPart"},
 	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-	CustomCrosshair = Vector2.new(0.5, 0.3)
+	CustomCrosshair = Vector2.new(0.5, 0.3) -- 50% horizontal, 30% vertical
 }
 
 local Players = game:GetService("Players")
@@ -43,6 +43,7 @@ fovCircle.Transparency = 0.4
 fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
 getgenv().AimbotFOVCircle = fovCircle
 
+-- Cache players
 local cachedPlayers, lastPlayerCache = {}, 0
 local function refreshPlayerCache()
 	if tick() - lastPlayerCache > 0.25 then
@@ -145,8 +146,8 @@ function Aimbot.Start()
 
 		updateFOVCircle()
 
-		local screenPoint = getCustomCrosshair()
-		local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
+		local crosshairPos = getCustomCrosshair()
+		local ray = Camera:ScreenPointToRay(crosshairPos.X, crosshairPos.Y)
 		local aimOrigin = ray.Origin
 
 		local targetData = getClosestTarget()
@@ -156,13 +157,10 @@ function Aimbot.Start()
 				((1 - (targetData.ScreenDist / fovCircle.Radius)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
 			local newLookTo = aimOrigin + aimDirection
-			local newCFrame = CFrame.new(Camera.CFrame.Position, newLookTo)
+			local newCFrame = CFrame.new(aimOrigin, newLookTo)
 			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
 		end
 	end)
 end
 
 return Aimbot
-
-
---- IDK WHAT IM DOING BRUH --
