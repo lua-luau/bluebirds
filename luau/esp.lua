@@ -39,12 +39,12 @@ local ESP = {}
 ESP.Settings = {
     ShowTeammates = true,
     BoxThickness = 2,
-    TextSize = 16,
+    TextSize = 10,
     TracerThickness = 1,
     TracerOrigin = "Bottom", -- "Center" or "Bottom"
-    MaxFadeDistance = 1000,
+    MaxFadeDistance = 3500,
     MinTransparency = 0.3,
-    BaseTransparency = 0.1,
+    BaseTransparency = 0.8,
 }
 
 --// INTERNAL
