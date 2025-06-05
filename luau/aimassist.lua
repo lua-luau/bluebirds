@@ -24,21 +24,7 @@ Aimbot.Settings = {
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
-local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
-
--- Input detection for mobile
-local inputActive = false
-UserInputService.InputBegan:Connect(function(input, gp)
-    if input.UserInputType == Enum.UserInputType.Touch then
-        inputActive = true
-    end
-end)
-UserInputService.InputEnded:Connect(function(input, gp)
-    if input.UserInputType == Enum.UserInputType.Touch then
-        inputActive = false
-    end
-end)
 
 -- Remove any existing FOV circle
 if getgenv().AimbotFOVCircle then
@@ -166,10 +152,8 @@ function Aimbot.Start()
             local assistDir = (targetData.Position - aimOrigin).Unit
             local currentCFrame = Camera.CFrame
             local targetCFrame = CFrame.new(currentCFrame.Position, currentCFrame.Position + assistDir)
-
-            local baseSmoothing = Aimbot.Settings.AimSmoothing
-            local dynamicSmoothing = inputActive and math.clamp(baseSmoothing + 0.5, 0, 1) or baseSmoothing
-            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - dynamicSmoothing)
+            local smoothing = math.clamp(Aimbot.Settings.AimSmoothing, 0, 1)
+            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - smoothing)
         end
     end)
 end
