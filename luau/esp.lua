@@ -1,7 +1,6 @@
 -- ESP.lua
--- Singleton-safe, reloadable, externally controlled ESP module
+-- reloadable, externally controlled ESP module
 
---// GLOBAL SINGLETON PROTECTION
 if getgenv then
     getgenv().__CustomESP = getgenv().__CustomESP or {}
 else
@@ -10,7 +9,6 @@ end
 
 local Shared = getgenv and getgenv().__CustomESP or _G.__CustomESP
 
--- Stop previous ESP if already running
 if Shared.runningConnection then
     Shared.runningConnection:Disconnect()
 end

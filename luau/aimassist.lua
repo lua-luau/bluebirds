@@ -9,8 +9,8 @@ getgenv().Aimbot = Aimbot
 -- Settings
 Aimbot.Settings = {
     AimFOV = 35,
-    AimSmoothing = 0.15, -- 0 = snap, 1 = no movement
-    PingFallback = 50,
+    AimSmoothing = 0.15,
+    PingFallback = 200,
     EnableFOVSync = true,
     ShowFOVCircle = true,
     TeamCheck = false,
@@ -20,11 +20,12 @@ Aimbot.Settings = {
     MaxPredictionTime = 0.2,
     LOSParts = {"Head", "HumanoidRootPart"},
     ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-    CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position
+    CustomCrosshair = Vector2.new(0.5, 0.5)
 }
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
 local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 
@@ -51,24 +52,30 @@ local function refreshPlayerCache()
     end
 end
 
+local function getPing()
+    local success, ping = pcall(function()
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+    return success and ping or Aimbot.Settings.PingFallback
+end
+
 local function getPredictedPosition(part)
     local vel = part:IsA("BasePart") and part.Velocity or Vector3.zero
-    local predictionTime = math.clamp(Aimbot.Settings.PingFallback / 1000, 0, Aimbot.Settings.MaxPredictionTime)
+    local predictionTime = math.clamp(getPing() / 1000, 0, Aimbot.Settings.MaxPredictionTime)
     return part.Position + (vel * predictionTime)
 end
 
--- Line of Sight: ENEMY → LocalPlayer
 local function checkLineOfSight(char)
     for _, partName in ipairs(Aimbot.Settings.LOSParts) do
-        local part = char:FindFirstChild(partName)
+        local targetPart = char:FindFirstChild(partName)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if part and root then
-            local dir = (root.Position - part.Position)
+        if targetPart and root then
+            local dir = (targetPart.Position - root.Position)
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Blacklist
             rayParams.FilterDescendantsInstances = {char, player.Character}
-            local result = workspace:Raycast(part.Position, dir.Unit * dir.Magnitude, rayParams)
-            if result and not result.Instance:IsDescendantOf(player.Character) then
+            local result = workspace:Raycast(root.Position, dir, rayParams)
+            if result and not result.Instance:IsDescendantOf(char) then
                 return false
             end
         end
@@ -78,7 +85,10 @@ end
 
 local function getCustomCrosshair()
     local viewport = Camera.ViewportSize
-    local scale = Aimbot.Settings.CustomCrosshair or Vector2.new(0.5, 0.5)
+    local scale = Aimbot.Settings.CustomCrosshair
+    if typeof(scale) ~= "Vector2" or scale.X < 0 or scale.X > 1 or scale.Y < 0 or scale.Y > 1 then
+        scale = Vector2.new(0.5, 0.5)
+    end
     return Vector2.new(viewport.X * scale.X, viewport.Y * scale.Y)
 end
 
@@ -144,7 +154,9 @@ end
 
 -- Public Start Function
 function Aimbot.Start()
-    RunService.RenderStepped:Connect(function()
+    if Aimbot._conn then Aimbot._conn:Disconnect() end
+
+    Aimbot._conn = RunService.RenderStepped:Connect(function()
         if not player.Character or not Camera then return end
 
         updateFOVCircle()
@@ -161,6 +173,17 @@ function Aimbot.Start()
             Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - smoothing)
         end
     end)
+end
+
+function Aimbot.Stop()
+    if Aimbot._conn then
+        Aimbot._conn:Disconnect()
+        Aimbot._conn = nil
+    end
+    if getgenv().AimbotFOVCircle then
+        getgenv().AimbotFOVCircle:Remove()
+        getgenv().AimbotFOVCircle = nil
+    end
 end
 
 return Aimbot
