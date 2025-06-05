@@ -1,157 +1,151 @@
--- Prevent duplicate aimbot instance  
-if getgenv().Aimbot then  
-    return getgenv().Aimbot  
-end  
-  
-local Aimbot = {}  
-getgenv().Aimbot = Aimbot  
-  
--- Settings can be overridden per user/module    
-Aimbot.Settings = {    
-	AimFOV = 35,    
-	MinAssist = 0.05,    
-	MaxAssist = 0.35,    
-	PingFallback = 50,    
-	EnableFOVSync = true,    
-	ShowFOVCircle = true,    
-	TeamCheck = false,    
-	UseLineOfSight = true,    
-	TargetPart = "Head",    
-	MaxPredictionTime = 0.2,    
-	LOSParts = {"Head", "HumanoidRootPart"},    
-	ScoreWeights = { FOV = 0.6, Distance = 0.4 },    
-	CustomCrosshair = nil -- set to Vector2 (0-1 range, like UDim2.Scale)    
-}  
-  
-local Players = game:GetService("Players")  
-local RunService = game:GetService("RunService")  
-local Camera = workspace.CurrentCamera  
-local player = Players.LocalPlayer  
-  
--- Remove any existing FOV circle  
-if getgenv().AimbotFOVCircle then  
-    getgenv().AimbotFOVCircle:Remove()  
-    getgenv().AimbotFOVCircle = nil  
-end  
-  
--- Create Drawing Circle  
-local fovCircle = Drawing.new("Circle")  
-fovCircle.Color = Color3.fromRGB(0, 255, 0)  
-fovCircle.Thickness = 2  
-fovCircle.Filled = false  
-fovCircle.Transparency = 0.4  
-fovCircle.Visible = Aimbot.Settings.ShowFOVCircle  
-getgenv().AimbotFOVCircle = fovCircle  
-  
-local cachedPlayers, lastPlayerCache = {}, 0  
-local function refreshPlayerCache()  
-	if tick() - lastPlayerCache > 0.25 then  
-		cachedPlayers = Players:GetPlayers()  
-		lastPlayerCache = tick()  
-	end  
-end  
-  
-local function getPredictedPosition(part)  
-	local vel = part:IsA("BasePart") and part.Velocity or Vector3.zero  
-	local predictionTime = math.clamp(Aimbot.Settings.PingFallback / 1000, 0, Aimbot.Settings.MaxPredictionTime)  
-	return part.Position + (vel * predictionTime)  
-end  
-  
-local function checkLineOfSight(char)  
-	for _, partName in ipairs(Aimbot.Settings.LOSParts) do  
-		local part = char:FindFirstChild(partName)  
-		if part then  
-			local dir = (part.Position - Camera.CFrame.Position)  
-			local rayParams = RaycastParams.new()  
-			rayParams.FilterType = Enum.RaycastFilterType.Blacklist  
-			rayParams.FilterDescendantsInstances = {player.Character, char}  
-			local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, rayParams)  
-			if result and not result.Instance:IsDescendantOf(char) then  
-				return false  
-			end  
-		end  
-	end  
-	return true  
-end  
-  
-local function getCustomCrosshair()  
-	local viewport = Camera.ViewportSize  
-	local scale = Aimbot.Settings.CustomCrosshair or Vector2.new(0.5, 0.5)  
-	return Vector2.new(viewport.X * scale.X, viewport.Y * scale.Y)  
-end  
-  
-local function getClosestTarget()  
-	refreshPlayerCache()  
-	local best, bestScore = nil, -math.huge  
-	local camPos = Camera.CFrame.Position  
-	local camLook = Camera.CFrame.LookVector  
-  
-	for _, otherPlayer in ipairs(cachedPlayers) do  
-		if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild(Aimbot.Settings.TargetPart) then  
-			if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= player.Team then  
-				local part = otherPlayer.Character[Aimbot.Settings.TargetPart]  
-				local predictedPos = getPredictedPosition(part)  
-				local aimDir = (predictedPos - camPos).Unit  
-				local angle = math.deg(math.acos(math.clamp(camLook:Dot(aimDir), -1, 1)))  
-				if angle <= Aimbot.Settings.AimFOV then  
-					local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)  
-					if onScreen then  
-						local dist = (part.Position - camPos).Magnitude  
-						local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)  
-						if losOK then  
-							local score =  
-								((1 - (angle / Aimbot.Settings.AimFOV)) * Aimbot.Settings.ScoreWeights.FOV) +  
-								((1 / dist) * Aimbot.Settings.ScoreWeights.Distance)  
-  
-							if score > bestScore then  
-								bestScore = score  
-								best = {  
-									Part = part,  
-									PredictedPos = predictedPos,  
-									Angle = angle,  
-									Distance = dist,  
-									ScreenPos = screenPos  
-								}  
-							end  
-						end  
-					end  
-				end  
-			end  
-		end  
-	end  
-  
-	return best  
-end  
-  
-local function updateFOVCircle()  
-	if not Aimbot.Settings.ShowFOVCircle then  
-		fovCircle.Visible = false  
-		return  
-	end  
-  
-	local camFOV = Camera.FieldOfView  
-	local screenHeight = Camera.ViewportSize.Y  
-	local scale = math.tan(math.rad(Aimbot.Settings.AimFOV / 2)) / math.tan(math.rad(camFOV / 2))  
-	fovCircle.Radius = (screenHeight / 2) * scale  
-	fovCircle.Position = getCustomCrosshair()  
-	fovCircle.Visible = true  
-end  
-  
--- Public Start Function  
-function Aimbot.Start()  
-	RunService.RenderStepped:Connect(function()  
-		if not player.Character or not Camera then return end  
-  
-		updateFOVCircle()  
-  
-		local targetData = getClosestTarget()  
-		if targetData then  
-			local assistStrength = Aimbot.Settings.MinAssist + ((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))  
-			local aimDir = (targetData.PredictedPos - Camera.CFrame.Position).Unit  
-			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + aimDir)  
-			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)  
-		end  
-	end)  
-end  
-  
-return Aimbot
+local AimAssist = {}
+
+-- ================== SERVICES ================== --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local gravity = workspace.Gravity
+
+-- ================== CONFIG ================== --
+AimAssist.Settings = {
+	AimFOV = 15,
+	ViewDistance = 10,
+	MinAssist = 0.02,
+	MaxAssist = 0.15,
+	PingFallback = 50,
+	EnableFOVSync = true,
+	ShowFOVCircle = true,
+	TeamCheck = false,
+	UseLineOfSight = false,
+	TargetPart = "Head",
+	MaxPredictionTime = 0.1
+}
+
+-- ================== STATE ================== --
+local SmoothedVelocities = {}
+local VelocitySmoothingFactor = 0.2
+
+-- ================== FOV CIRCLE ================== --
+local fovCircle = Drawing.new("Circle")
+fovCircle.Color = Color3.fromRGB(0, 255, 0)
+fovCircle.Thickness = 2
+fovCircle.Filled = false
+fovCircle.Transparency = 0.4
+fovCircle.Visible = AimAssist.Settings.ShowFOVCircle
+
+local function updateFOVCircleRadius()
+	local angleRad = math.rad(AimAssist.Settings.AimFOV)
+	local offset = math.tan(angleRad) * AimAssist.Settings.ViewDistance
+	local centerWorld = Camera.CFrame.Position + Camera.CFrame.LookVector * AimAssist.Settings.ViewDistance
+	local edgeWorld = centerWorld + Camera.CFrame.RightVector * offset
+
+	local screenCenter = Camera:WorldToViewportPoint(centerWorld)
+	local screenEdge = Camera:WorldToViewportPoint(edgeWorld)
+	local radius = (Vector2.new(screenEdge.X, screenEdge.Y) - Vector2.new(screenCenter.X, screenCenter.Y)).Magnitude
+	fovCircle.Radius = radius
+end
+
+-- ================== PREDICTION ================== --
+local function getPing()
+	local stats = LocalPlayer:FindFirstChild("PerformanceStats")
+	local ping = stats and stats:FindFirstChild("Ping")
+	return ping and ping.Value or AimAssist.Settings.PingFallback
+end
+
+local function getPredictedPosition(char, part, pingMs)
+	if not (char and part) then return part.Position end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local velocity = hrp and hrp.Velocity or part.Velocity
+	local userId = char:GetAttribute("UserId") or 0
+
+	local prev = SmoothedVelocities[userId]
+	if prev then
+		velocity = prev:Lerp(velocity, VelocitySmoothingFactor)
+	end
+	SmoothedVelocities[userId] = velocity
+
+	local t = math.clamp(pingMs / 1000, 0.01, AimAssist.Settings.MaxPredictionTime)
+	local vertical = velocity.Y * t + 0.5 * -gravity * t * t
+
+	return part.Position + Vector3.new(velocity.X * t, vertical, velocity.Z * t)
+end
+
+-- ================== TARGET FINDER ================== --
+local function getClosestTarget()
+	local best = nil
+	local bestDist = math.huge
+	local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local radius = fovCircle.Radius
+	local ping = getPing()
+
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		if otherPlayer ~= LocalPlayer and otherPlayer.Character then
+			if not AimAssist.Settings.TeamCheck or otherPlayer.Team ~= LocalPlayer.Team then
+				local char = otherPlayer.Character
+				local part = char:FindFirstChild(AimAssist.Settings.TargetPart)
+				if part then
+					local predicted = getPredictedPosition(char, part, ping)
+					local screenPos, onScreen = Camera:WorldToViewportPoint(predicted)
+					if onScreen then
+						local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+						if dist < radius then
+							local worldDist = (part.Position - Camera.CFrame.Position).Magnitude
+							local visible = true
+
+							if AimAssist.Settings.UseLineOfSight then
+								local rayParams = RaycastParams.new()
+								rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+								rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+								local result = workspace:Raycast(Camera.CFrame.Position, (predicted - Camera.CFrame.Position).Unit * worldDist, rayParams)
+								visible = result == nil
+							end
+
+							if visible and worldDist < bestDist then
+								best = {
+									Part = part,
+									PredictedPos = predicted,
+									ScreenDistance = dist,
+									Fraction = dist / radius,
+									WorldDistance = worldDist
+								}
+								bestDist = worldDist
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return best
+end
+
+-- ================== MAIN LOOP ================== --
+local connected = false
+
+function AimAssist.Start()
+	if connected then return end
+	connected = true
+
+	RunService.RenderStepped:Connect(function()
+		local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+		fovCircle.Position = screenCenter
+
+		if AimAssist.Settings.EnableFOVSync then
+			updateFOVCircleRadius()
+		end
+
+		local target = getClosestTarget()
+		if target then
+			local assist = AimAssist.Settings.MinAssist + (1 - target.Fraction) * (AimAssist.Settings.MaxAssist - AimAssist.Settings.MinAssist)
+			local direction = (target.PredictedPos - Camera.CFrame.Position).Unit
+			local newLook = Camera.CFrame.LookVector:Lerp(direction, assist)
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + newLook)
+		end
+	end)
+end
+
+return AimAssist
