@@ -1,53 +1,60 @@
--- Prevent duplicate aimbot instance
-if getgenv().Aimbot then
-    return getgenv().Aimbot
-end
-
-local Aimbot = {}
-getgenv().Aimbot = Aimbot
-
--- Settings
-Aimbot.Settings = {  
-	AimFOV = 35,  
-	MinAssist = 0.05,  
-	MaxAssist = 0.35,  
-	PingFallback = 50,  
-	EnableFOVSync = true,  
-	ShowFOVCircle = true,  
-	TeamCheck = false,  
-	UseLineOfSight = true,  
-	TargetPart = "Head",  
-	MaxPredictionTime = 0.2,  
-	LOSParts = {"Head", "HumanoidRootPart"},  
-	ScoreWeights = { FOV = 0.6, Distance = 0.4 },  
-	CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position
-}
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
-local player = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
 
--- Remove any existing FOV circle
-if getgenv().AimbotFOVCircle then
-    getgenv().AimbotFOVCircle:Remove()
-    getgenv().AimbotFOVCircle = nil
+local Aimbot = {}
+Aimbot.Settings = {
+	AimFOV = 35,
+	MinAssist = 0.05,
+	MaxAssist = 0.35,
+	PingFallback = 50,
+	EnableFOVSync = true,
+	ShowFOVCircle = true,
+	TeamCheck = false,
+	UseLineOfSight = true,
+	TargetPart = "Head",
+	MaxPredictionTime = 0.2,
+	LOSParts = {"Head", "HumanoidRootPart"},
+	ScoreWeights = { FOV = 0.6, Distance = 0.4 },
+	CustomCrosshair = Vector2.new(0.5, 0.5)
+}
+
+local localPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local connection = nil
+local fovCircle = nil
+local cachedPlayers = {}
+local lastCacheTime = 0
+
+-- Drawing setup
+local function initFOVCircle()
+	if fovCircle then fovCircle:Remove() end
+	fovCircle = Drawing.new("Circle")
+	fovCircle.Color = Color3.fromRGB(0, 255, 0)
+	fovCircle.Thickness = 2
+	fovCircle.Filled = false
+	fovCircle.Transparency = 0.4
+	fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
 end
 
--- Create Drawing Circle
-local fovCircle = Drawing.new("Circle")
-fovCircle.Color = Color3.fromRGB(0, 255, 0)
-fovCircle.Thickness = 2
-fovCircle.Filled = false
-fovCircle.Transparency = 0.4
-fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
-getgenv().AimbotFOVCircle = fovCircle
+local function updateFOVCircle()
+	if not Aimbot.Settings.ShowFOVCircle or not fovCircle then
+		if fovCircle then fovCircle.Visible = false end
+		return
+	end
+	local screenSize = Camera.ViewportSize.Y
+	local fov = Aimbot.Settings.AimFOV
+	local scale = math.tan(math.rad(fov / 2)) / math.tan(math.rad(Camera.FieldOfView / 2))
+	fovCircle.Radius = (screenSize / 2) * scale
+	local viewScale = Aimbot.Settings.CustomCrosshair
+	fovCircle.Position = Vector2.new(Camera.ViewportSize.X * viewScale.X, Camera.ViewportSize.Y * viewScale.Y)
+	fovCircle.Visible = true
+end
 
-local cachedPlayers, lastPlayerCache = {}, 0
 local function refreshPlayerCache()
-	if tick() - lastPlayerCache > 0.25 then
+	if tick() - lastCacheTime > 0.25 then
 		cachedPlayers = Players:GetPlayers()
-		lastPlayerCache = tick()
+		lastCacheTime = tick()
 	end
 end
 
@@ -57,16 +64,20 @@ local function getPredictedPosition(part)
 	return part.Position + (vel * predictionTime)
 end
 
-local function checkLineOfSight(char)
+-- LOS: From enemy part TO local character
+local function checkLineOfSight(enemyChar)
+	if not localPlayer.Character or not localPlayer.Character:FindFirstChild("Head") then return false end
+	local localHead = localPlayer.Character.Head.Position
+
 	for _, partName in ipairs(Aimbot.Settings.LOSParts) do
-		local part = char:FindFirstChild(partName)
+		local part = enemyChar:FindFirstChild(partName)
 		if part then
-			local dir = (part.Position - Camera.CFrame.Position)
-			local rayParams = RaycastParams.new()
-			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-			rayParams.FilterDescendantsInstances = {player.Character, char}
-			local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, rayParams)
-			if result and not result.Instance:IsDescendantOf(char) then
+			local direction = (localHead - part.Position).Unit * (localHead - part.Position).Magnitude
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Blacklist
+			params.FilterDescendantsInstances = {enemyChar, localPlayer.Character}
+			local result = Workspace:Raycast(part.Position, direction, params)
+			if result and not result.Instance:IsDescendantOf(localPlayer.Character) then
 				return false
 			end
 		end
@@ -74,46 +85,41 @@ local function checkLineOfSight(char)
 	return true
 end
 
-local function getCustomCrosshair()
-	local viewport = Camera.ViewportSize
-	local scale = Aimbot.Settings.CustomCrosshair or Vector2.new(0.5, 0.5)
-	return Vector2.new(viewport.X * scale.X, viewport.Y * scale.Y)
+local function getCrosshairPosition()
+	local scale = Aimbot.Settings.CustomCrosshair
+	return Vector2.new(Camera.ViewportSize.X * scale.X, Camera.ViewportSize.Y * scale.Y)
 end
 
 local function getClosestTarget()
 	refreshPlayerCache()
-	local best, bestScore = nil, -math.huge
-	local camPos = Camera.CFrame.Position
-	local screenPoint = getCustomCrosshair()
+	local best = nil
+	local bestScore = -math.huge
+	local screenPoint = getCrosshairPosition()
 	local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
-	local aimOrigin = ray.Origin
-	local aimDirection = ray.Direction.Unit
+	local origin = ray.Origin
+	local aimDir = ray.Direction.Unit
 
 	for _, otherPlayer in ipairs(cachedPlayers) do
-		if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild(Aimbot.Settings.TargetPart) then
-			if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= player.Team then
-				local part = otherPlayer.Character[Aimbot.Settings.TargetPart]
-				local predictedPos = getPredictedPosition(part)
-				local toTarget = (predictedPos - aimOrigin).Unit
-				local angle = math.deg(math.acos(math.clamp(aimDirection:Dot(toTarget), -1, 1)))
+		if otherPlayer ~= localPlayer and otherPlayer.Character and otherPlayer.Character:FindFirstChild(Aimbot.Settings.TargetPart) then
+			if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= localPlayer.Team then
+				local targetPart = otherPlayer.Character[Aimbot.Settings.TargetPart]
+				local predicted = getPredictedPosition(targetPart)
+				local toTarget = (predicted - origin).Unit
+				local angle = math.deg(math.acos(math.clamp(aimDir:Dot(toTarget), -1, 1)))
 				if angle <= Aimbot.Settings.AimFOV then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+					local screenPos, onScreen = Camera:WorldToViewportPoint(predicted)
 					if onScreen then
-						local dist = (part.Position - camPos).Magnitude
-						local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
-						if losOK then
+						local dist = (Camera.CFrame.Position - targetPart.Position).Magnitude
+						local losCheck = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
+						if losCheck then
 							local score =
 								((1 - (angle / Aimbot.Settings.AimFOV)) * Aimbot.Settings.ScoreWeights.FOV) +
 								((1 / dist) * Aimbot.Settings.ScoreWeights.Distance)
-
 							if score > bestScore then
 								bestScore = score
 								best = {
-									Part = part,
-									PredictedPos = predictedPos,
-									Angle = angle,
-									Distance = dist,
-									ScreenPos = screenPos
+									PredictedPos = predicted,
+									Angle = angle
 								}
 							end
 						end
@@ -122,45 +128,41 @@ local function getClosestTarget()
 			end
 		end
 	end
-
 	return best
 end
 
-local function updateFOVCircle()
-	if not Aimbot.Settings.ShowFOVCircle then
-		fovCircle.Visible = false
-		return
-	end
-
-	local camFOV = Camera.FieldOfView
-	local screenHeight = Camera.ViewportSize.Y
-	local scale = math.tan(math.rad(Aimbot.Settings.AimFOV / 2)) / math.tan(math.rad(camFOV / 2))
-	fovCircle.Radius = (screenHeight / 2) * scale
-	fovCircle.Position = getCustomCrosshair()
-	fovCircle.Visible = true
-end
-
--- Public Start Function
 function Aimbot.Start()
-	RunService.RenderStepped:Connect(function()
-		if not player.Character or not Camera then return end
-
+	if connection then return end
+	initFOVCircle()
+	connection = RunService.RenderStepped:Connect(function()
+		if not Camera or not localPlayer.Character then return end
 		updateFOVCircle()
 
-		local targetData = getClosestTarget()
-		if targetData then
-			local screenPoint = getCustomCrosshair()
+		local target = getClosestTarget()
+		if target then
+			local screenPoint = getCrosshairPosition()
 			local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
-			local aimOrigin = ray.Origin
-			local aimDirection = (targetData.PredictedPos - aimOrigin).Unit
+			local origin = ray.Origin
+			local assistDir = (target.PredictedPos - origin).Unit
 
-			local assistStrength = Aimbot.Settings.MinAssist +
-				((1 - (targetData.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
+			local strength = Aimbot.Settings.MinAssist +
+				((1 - (target.Angle / Aimbot.Settings.AimFOV)) * (Aimbot.Settings.MaxAssist - Aimbot.Settings.MinAssist))
 
-			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + aimDirection)
-			Camera.CFrame = Camera.CFrame:Lerp(newCFrame, assistStrength)
+			local newCam = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + assistDir)
+			Camera.CFrame = Camera.CFrame:Lerp(newCam, strength)
 		end
 	end)
+end
+
+function Aimbot.Stop()
+	if connection then
+		connection:Disconnect()
+		connection = nil
+	end
+	if fovCircle then
+		fovCircle:Remove()
+		fovCircle = nil
+	end
 end
 
 return Aimbot
