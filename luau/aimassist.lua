@@ -9,25 +9,36 @@ getgenv().Aimbot = Aimbot
 -- Settings
 Aimbot.Settings = {
     AimFOV = 35,
-    AimSmoothing = 0.15,
-    PingFallback = 200,
+    AimSmoothing = 0.15, -- 0 = snap, 1 = no movement
     EnableFOVSync = true,
     ShowFOVCircle = true,
     TeamCheck = false,
     UseLineOfSight = true,
     HealthCheck = true,
     TargetPart = "Head",
-    MaxPredictionTime = 0.2,
     LOSParts = {"Head", "HumanoidRootPart"},
     ScoreWeights = { FOV = 0.6, Distance = 0.4 },
-    CustomCrosshair = Vector2.new(0.5, 0.5)
+    CustomCrosshair = Vector2.new(0.5, 0.5) -- normalized screen position
 }
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Stats = game:GetService("Stats")
 local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
+
+-- Input detection for mobile
+local inputActive = false
+UserInputService.InputBegan:Connect(function(input, gp)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        inputActive = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(input, gp)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        inputActive = false
+    end
+end)
 
 -- Remove any existing FOV circle
 if getgenv().AimbotFOVCircle then
@@ -52,25 +63,12 @@ local function refreshPlayerCache()
     end
 end
 
-local function getPing()
-    local success, ping = pcall(function()
-        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-    end)
-    return success and ping or Aimbot.Settings.PingFallback
-end
-
-local function getPredictedPosition(part)
-    local vel = part:IsA("BasePart") and part.Velocity or Vector3.zero
-    local predictionTime = math.clamp(getPing() / 1000, 0, Aimbot.Settings.MaxPredictionTime)
-    return part.Position + (vel * predictionTime)
-end
-
 local function checkLineOfSight(char)
     for _, partName in ipairs(Aimbot.Settings.LOSParts) do
-        local targetPart = char:FindFirstChild(partName)
+        local part = char:FindFirstChild(partName)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if targetPart and root then
-            local dir = (targetPart.Position - root.Position)
+        if part and root then
+            local dir = (part.Position - root.Position)
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Blacklist
             rayParams.FilterDescendantsInstances = {char, player.Character}
@@ -107,11 +105,10 @@ local function getClosestTarget()
             local humanoid = otherPlayer.Character:FindFirstChildOfClass("Humanoid")
             if targetPart and (not Aimbot.Settings.HealthCheck or (humanoid and humanoid.Health > 0)) then
                 if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= player.Team then
-                    local predictedPos = getPredictedPosition(targetPart)
-                    local toTarget = (predictedPos - aimOrigin).Unit
+                    local toTarget = (targetPart.Position - aimOrigin).Unit
                     local angle = math.deg(math.acos(math.clamp(aimDirection:Dot(toTarget), -1, 1)))
                     if angle <= Aimbot.Settings.AimFOV then
-                        local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
                             local dist = (targetPart.Position - camPos).Magnitude
                             local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
@@ -123,7 +120,7 @@ local function getClosestTarget()
                                     bestScore = score
                                     best = {
                                         Part = targetPart,
-                                        PredictedPos = predictedPos,
+                                        Position = targetPart.Position,
                                         Angle = angle,
                                         Distance = dist,
                                         ScreenPos = screenPos
@@ -166,11 +163,13 @@ function Aimbot.Start()
             local screenPoint = getCustomCrosshair()
             local ray = Camera:ScreenPointToRay(screenPoint.X, screenPoint.Y)
             local aimOrigin = ray.Origin
-            local assistDir = (targetData.PredictedPos - aimOrigin).Unit
+            local assistDir = (targetData.Position - aimOrigin).Unit
             local currentCFrame = Camera.CFrame
             local targetCFrame = CFrame.new(currentCFrame.Position, currentCFrame.Position + assistDir)
-            local smoothing = math.clamp(Aimbot.Settings.AimSmoothing, 0, 1)
-            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - smoothing)
+
+            local baseSmoothing = Aimbot.Settings.AimSmoothing
+            local dynamicSmoothing = inputActive and math.clamp(baseSmoothing + 0.5, 0, 1) or baseSmoothing
+            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - dynamicSmoothing)
         end
     end)
 end
