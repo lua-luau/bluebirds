@@ -1,169 +1,205 @@
--- Prevent duplicate ESP instance
-if getgenv().ESP then
-    return getgenv().ESP
+-- ESP.lua
+-- Singleton-safe, reloadable, externally controlled ESP module
+
+--// GLOBAL SINGLETON PROTECTION
+if getgenv then
+    getgenv().__CustomESP = getgenv().__CustomESP or {}
+else
+    _G.__CustomESP = _G.__CustomESP or {}
 end
 
-local ESP = {}
-getgenv().ESP = ESP
+local Shared = getgenv and getgenv().__CustomESP or _G.__CustomESP
 
--- Default Settings
-ESP.Settings = {
-    ShowBoxes = true,
-    ShowTracers = true,
-    ShowNames = false,
-    ShowTeammates = true,
-    TextSize = 16,
-    BoxThickness = 1.5,
-    TracerThickness = 1.5,
-    TracerOrigin = "Bottom", -- "Bottom" or "Center"
-    BaseTransparency = 0.2,
-    MinTransparency = 0.6,
-    MaxDistance = 1000,
-    TeamColor = true
-}
+-- Stop previous ESP if already running
+if Shared.runningConnection then
+    Shared.runningConnection:Disconnect()
+end
 
+if Shared.espObjects then
+    for _, esp in pairs(Shared.espObjects) do
+        esp.Box:Remove()
+        esp.Name:Remove()
+        esp.Tracer:Remove()
+    end
+end
+
+Shared.espObjects = {}
+Shared.runningConnection = nil
+Shared.connections = {}
+
+--// SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local espObjects = {}
 
--- Utility
-local function worldToScreen(position)
-    local screenPos, visible = Camera:WorldToViewportPoint(position)
-    return Vector2.new(screenPos.X, screenPos.Y), visible, screenPos.Z
-end
+--// MODULE TABLE
+local ESP = {}
 
-local function calculateTransparency(distance)
-    local max = ESP.Settings.MaxDistance
-    local alpha = 1 - math.clamp(distance / max, 0, 1)
-    return math.clamp(ESP.Settings.BaseTransparency + (alpha * (ESP.Settings.MinTransparency - ESP.Settings.BaseTransparency)), 0, 1)
-end
+ESP.Settings = {
+    ShowTeammates = true,
+    BoxThickness = 2,
+    TextSize = 16,
+    TracerThickness = 1,
+    TracerOrigin = "Bottom", -- "Center" or "Bottom"
+    MaxFadeDistance = 1000,
+    MinTransparency = 0.3,
+    BaseTransparency = 0.1,
+}
 
-local function getBoundingBox(character)
-    local parts = {}
-    for _, part in ipairs(character:GetChildren()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
-            table.insert(parts, part)
-        end
+--// INTERNAL
+local function clearESP(player)
+    local esp = Shared.espObjects[player]
+    if esp then
+        esp.Box:Remove()
+        esp.Name:Remove()
+        esp.Tracer:Remove()
+        Shared.espObjects[player] = nil
     end
-    if #parts == 0 then return end
-    local min, max = parts[1].Position, parts[1].Position
-    for _, p in ipairs(parts) do
-        local pos = p.Position
-        min = Vector3.new(math.min(min.X, pos.X), math.min(min.Y, pos.Y), math.min(min.Z, pos.Z))
-        max = Vector3.new(math.max(max.X, pos.X), math.max(max.Y, pos.Y), math.max(max.Z, pos.Z))
-    end
-    return (min + max) / 2, max - min
 end
 
 local function createESP(player)
-    if espObjects[player] or player == LocalPlayer then return end
+    if player == LocalPlayer or Shared.espObjects[player] then return end
 
     local box = Drawing.new("Square")
     box.Thickness = ESP.Settings.BoxThickness
     box.Filled = false
     box.Visible = false
 
-    local tracer = Drawing.new("Line")
-    tracer.Thickness = ESP.Settings.TracerThickness
-    tracer.Visible = false
-
     local name = Drawing.new("Text")
     name.Size = ESP.Settings.TextSize
     name.Center = true
     name.Outline = true
+    name.Font = Drawing.Fonts.UI
     name.Visible = false
 
-    espObjects[player] = {Box = box, Tracer = tracer, Name = name}
+    local tracer = Drawing.new("Line")
+    tracer.Thickness = ESP.Settings.TracerThickness
+    tracer.Visible = false
 
-    player.AncestryChanged:Connect(function(_, parent)
+    Shared.espObjects[player] = {Box = box, Name = name, Tracer = tracer}
+
+    table.insert(Shared.connections, player.AncestryChanged:Connect(function(_, parent)
         if not parent then
-            box:Remove()
-            tracer:Remove()
-            name:Remove()
-            espObjects[player] = nil
+            clearESP(player)
         end
-    end)
+    end))
 end
 
 local function updateESP()
-    for player, draw in pairs(espObjects) do
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local screenBottom = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+    local localCharacter = LocalPlayer.Character
+    local localHRP = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    if not localHRP then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        createESP(player)
+
+        local esp = Shared.espObjects[player]
         local character = player.Character
-        if not character or not character:FindFirstChild("HumanoidRootPart") then
-            draw.Box.Visible = false
-            draw.Tracer.Visible = false
-            draw.Name.Visible = false
+        if not character then
+            esp.Box.Visible = false
+            esp.Name.Visible = false
+            esp.Tracer.Visible = false
             continue
         end
+
+        local hrp = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+        local head = character:FindFirstChild("Head")
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+        if not hrp or not head or not humanoid or humanoid.Health <= 0 then
+            esp.Box.Visible = false
+            esp.Name.Visible = false
+            esp.Tracer.Visible = false
+            continue
+        end
+
         if not ESP.Settings.ShowTeammates and player.Team == LocalPlayer.Team then
-            draw.Box.Visible = false
-            draw.Tracer.Visible = false
-            draw.Name.Visible = false
+            esp.Box.Visible = false
+            esp.Name.Visible = false
+            esp.Tracer.Visible = false
             continue
         end
 
-        local center, size = getBoundingBox(character)
-        if not center or not size then
-            draw.Box.Visible = false
-            draw.Tracer.Visible = false
-            draw.Name.Visible = false
+        local hrpPos, onScreen1 = Camera:WorldToViewportPoint(hrp.Position)
+        local headPos, onScreen2 = Camera:WorldToViewportPoint(head.Position)
+        if not (onScreen1 and onScreen2 and hrpPos.Z > 0 and headPos.Z > 0) then
+            esp.Box.Visible = false
+            esp.Name.Visible = false
+            esp.Tracer.Visible = false
             continue
         end
 
-        local topLeft3D = center + Vector3.new(-size.X/2, size.Y/2, 0)
-        local bottomRight3D = center + Vector3.new(size.X/2, -size.Y/2, 0)
+        local height = math.abs(hrpPos.Y - headPos.Y) * 2.5
+        local width = height / 2
+        local boxPos = Vector2.new(hrpPos.X - width / 2, hrpPos.Y - height / 2)
+        local boxSize = Vector2.new(width, height)
 
-        local topLeft, vis1, z1 = worldToScreen(topLeft3D)
-        local bottomRight, vis2, z2 = worldToScreen(bottomRight3D)
-        local rootScreen, visible, z = worldToScreen(character.HumanoidRootPart.Position)
+        local distance = (localHRP.Position - hrp.Position).Magnitude
+        local fadeRatio = math.clamp(distance / ESP.Settings.MaxFadeDistance, 0, 1)
+        local transparency = math.clamp(
+            ESP.Settings.BaseTransparency + fadeRatio * (ESP.Settings.MinTransparency - ESP.Settings.BaseTransparency),
+            0, 1
+        )
 
-        if visible and vis1 and vis2 then
-            local boxSize = bottomRight - topLeft
-            local teamColor = (ESP.Settings.TeamColor and player.Team and player.Team.TeamColor.Color) or Color3.fromRGB(255,255,255)
-            local alpha = calculateTransparency((Camera.CFrame.Position - character.HumanoidRootPart.Position).Magnitude)
+        local teamColor = player.Team and player.Team.TeamColor.Color or Color3.new(1, 1, 1)
 
-            draw.Box.Position = topLeft
-            draw.Box.Size = boxSize
-            draw.Box.Color = teamColor
-            draw.Box.Transparency = alpha
-            draw.Box.Visible = ESP.Settings.ShowBoxes
+        esp.Box.Position = boxPos
+        esp.Box.Size = boxSize
+        esp.Box.Color = teamColor
+        esp.Box.Transparency = transparency
+        esp.Box.Visible = true
 
-            draw.Tracer.From = ESP.Settings.TracerOrigin == "Center" and Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2) or Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-            draw.Tracer.To = rootScreen
-            draw.Tracer.Color = teamColor
-            draw.Tracer.Transparency = alpha
-            draw.Tracer.Visible = ESP.Settings.ShowTracers
+        esp.Name.Text = player.Name
+        esp.Name.Position = Vector2.new(boxPos.X + width / 2, boxPos.Y - ESP.Settings.TextSize - 2)
+        esp.Name.Color = teamColor
+        esp.Name.Transparency = transparency
+        esp.Name.Visible = true
 
-            draw.Name.Text = player.Name
-            draw.Name.Position = Vector2.new(topLeft.X + boxSize.X/2, topLeft.Y - ESP.Settings.TextSize - 2)
-            draw.Name.Color = teamColor
-            draw.Name.Transparency = alpha
-            draw.Name.Visible = ESP.Settings.ShowNames
-        else
-            draw.Box.Visible = false
-            draw.Tracer.Visible = false
-            draw.Name.Visible = false
-        end
+        local origin = ESP.Settings.TracerOrigin == "Bottom" and screenBottom or screenCenter
+        esp.Tracer.From = origin
+        esp.Tracer.To = Vector2.new(hrpPos.X, hrpPos.Y)
+        esp.Tracer.Color = teamColor
+        esp.Tracer.Transparency = transparency
+        esp.Tracer.Visible = true
     end
 end
 
--- Runtime
-for _, p in ipairs(Players:GetPlayers()) do
-    createESP(p)
-end
-Players.PlayerAdded:Connect(createESP)
+--// START
+function ESP.Start()
+    if Shared.runningConnection then return end
+    Shared.runningConnection = RunService.RenderStepped:Connect(updateESP)
 
-RunService.RenderStepped:Connect(updateESP)
+    table.insert(Shared.connections, Players.PlayerAdded:Connect(createESP))
+    table.insert(Shared.connections, Players.PlayerRemoving:Connect(clearESP))
 
-function ESP:Unload()
-    for _, obj in pairs(espObjects) do
-        for _, d in pairs(obj) do
-            d:Remove()
-        end
+    for _, player in ipairs(Players:GetPlayers()) do
+        createESP(player)
     end
-    espObjects = {}
-    getgenv().ESP = nil
+end
+
+--// STOP
+function ESP.Stop()
+    if Shared.runningConnection then
+        Shared.runningConnection:Disconnect()
+        Shared.runningConnection = nil
+    end
+
+    for _, conn in ipairs(Shared.connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    Shared.connections = {}
+
+    for _, esp in pairs(Shared.espObjects) do
+        esp.Box:Remove()
+        esp.Name:Remove()
+        esp.Tracer:Remove()
+    end
+
+    Shared.espObjects = {}
 end
 
 return ESP
