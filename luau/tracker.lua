@@ -6,7 +6,7 @@ local username = player.Name
 local gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
 local gameLink = "https://www.roblox.com/games/" .. game.PlaceId
 
-local webhookUrl = "https://discord.com/api/webhooks/1379840667076923524/u8CyESQXykF52nMlp_eK-WXcB0aDSdxzSEfvD4KObqTylhr1GGy_QnLL0hdFvPaKWpXf"
+local webhookUrl = ""
 
 local data = {
     ["embeds"] = {{
