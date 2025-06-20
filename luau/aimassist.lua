@@ -5,8 +5,7 @@ end
 local Aimbot = {}
 getgenv().Aimbot = Aimbot
 
--- Settings
-Aimbot.Settings = {
+local rawSettings = {
     Enabled = true,
     AimFOV = 35,
     AimSmoothing = 0.15,
@@ -19,24 +18,46 @@ Aimbot.Settings = {
     FOVCircleColor = Color3.fromRGB(255, 0, 0)
 }
 
+local fovCircle
+local function updateFOVCircle()
+    if not fovCircle then return end
+    fovCircle.Visible = rawSettings.ShowFOVCircle
+    if not rawSettings.ShowFOVCircle then return end
+    fovCircle.Color = rawSettings.FOVCircleColor
+    local camFOV = workspace.CurrentCamera.FieldOfView
+    local screenHeight = workspace.CurrentCamera.ViewportSize.Y
+    local aimFOV = math.clamp(rawSettings.AimFOV, 1, 180)
+    local scale = math.tan(math.rad(aimFOV / 2)) / math.tan(math.rad(camFOV / 2))
+    fovCircle.Radius = (screenHeight / 2) * scale
+    fovCircle.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
+end
+
+Aimbot.Settings = setmetatable({}, {
+    __index = rawSettings,
+    __newindex = function(_, key, value)
+        rawSettings[key] = value
+        if key == "ShowFOVCircle" or key == "FOVCircleColor" or key == "AimFOV" then
+            updateFOVCircle()
+        end
+    end
+})
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 
--- Remove any existing FOV circle
 if getgenv().AimbotFOVCircle then
     getgenv().AimbotFOVCircle:Remove()
     getgenv().AimbotFOVCircle = nil
 end
 
--- Create FOV Circle
-local fovCircle = Drawing.new("Circle")
-fovCircle.Color = Aimbot.Settings.FOVCircleColor
+fovCircle = Drawing.new("Circle")
+fovCircle.Color = rawSettings.FOVCircleColor
 fovCircle.Thickness = 2
 fovCircle.Filled = false
 fovCircle.Transparency = 0.4
-fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
+fovCircle.Visible = rawSettings.ShowFOVCircle
 getgenv().AimbotFOVCircle = fovCircle
 
 local cachedPlayers, lastPlayerCache = {}, 0
@@ -48,7 +69,7 @@ local function refreshPlayerCache()
 end
 
 local function checkLineOfSight(char)
-    for _, partName in ipairs(Aimbot.Settings.LOSParts) do
+    for _, partName in ipairs(rawSettings.LOSParts) do
         local part = char:FindFirstChild(partName)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if part and root then
@@ -67,7 +88,7 @@ end
 
 local function getClosestTarget()
     refreshPlayerCache()
-    local bestTarget, lowestAngle = nil, Aimbot.Settings.AimFOV
+    local bestTarget, lowestAngle = nil, rawSettings.AimFOV
     local camPos = Camera.CFrame.Position
     local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     local ray = Camera:ScreenPointToRay(screenCenter.X, screenCenter.Y)
@@ -76,14 +97,14 @@ local function getClosestTarget()
 
     for _, otherPlayer in ipairs(cachedPlayers) do
         if otherPlayer ~= player and otherPlayer.Character then
-            local targetPart = otherPlayer.Character:FindFirstChild(Aimbot.Settings.TargetPart)
+            local targetPart = otherPlayer.Character:FindFirstChild(rawSettings.TargetPart)
             local humanoid = otherPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if targetPart and (not Aimbot.Settings.HealthCheck or (humanoid and humanoid.Health > 0)) then
-                if not Aimbot.Settings.TeamCheck or otherPlayer.Team ~= player.Team then
+            if targetPart and (not rawSettings.HealthCheck or (humanoid and humanoid.Health > 0)) then
+                if not rawSettings.TeamCheck or otherPlayer.Team ~= player.Team then
                     local toTarget = (targetPart.Position - aimOrigin).Unit
                     local angle = math.deg(math.acos(math.clamp(aimDirection:Dot(toTarget), -1, 1)))
                     if angle <= lowestAngle then
-                        local losOK = not Aimbot.Settings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
+                        local losOK = not rawSettings.UseLineOfSight or checkLineOfSight(otherPlayer.Character)
                         if losOK then
                             bestTarget = targetPart
                             lowestAngle = angle
@@ -96,26 +117,13 @@ local function getClosestTarget()
     return bestTarget
 end
 
-local function updateFOVCircle()
-    fovCircle.Visible = Aimbot.Settings.ShowFOVCircle
-    if not Aimbot.Settings.ShowFOVCircle then return end
-
-    fovCircle.Color = Aimbot.Settings.FOVCircleColor
-    local camFOV = Camera.FieldOfView
-    local screenHeight = Camera.ViewportSize.Y
-    local scale = math.tan(math.rad(Aimbot.Settings.AimFOV / 2)) / math.tan(math.rad(camFOV / 2))
-    fovCircle.Radius = (screenHeight / 2) * scale
-    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-end
-
 function Aimbot.Start()
     if Aimbot._conn then Aimbot._conn:Disconnect() end
 
     Aimbot._conn = RunService.RenderStepped:Connect(function()
         if not player.Character or not Camera then return end
-
         updateFOVCircle()
-        if not Aimbot.Settings.Enabled then return end
+        if not rawSettings.Enabled then return end
 
         local targetPart = getClosestTarget()
         if targetPart then
@@ -125,7 +133,7 @@ function Aimbot.Start()
             local assistDir = (targetPart.Position - aimOrigin).Unit
             local currentCFrame = Camera.CFrame
             local targetCFrame = CFrame.new(currentCFrame.Position, currentCFrame.Position + assistDir)
-            local smoothing = math.clamp(Aimbot.Settings.AimSmoothing, 0, 1)
+            local smoothing = math.clamp(rawSettings.AimSmoothing, 0, 1)
             Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 - smoothing)
         end
     end)
