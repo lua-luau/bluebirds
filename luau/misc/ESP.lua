@@ -1,100 +1,74 @@
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+--[[ Configuration (set externally using getgenv())
+-- getgenv().enabled = true
+-- getgenv().filluseteamcolor = true
+-- getgenv().outlineuseteamcolor = true
+-- getgenv().fillcolor = Color3.new(0, 0, 0)
+-- getgenv().outlinecolor = Color3.new(1, 1, 1)
+-- getgenv().filltrans = 0.5
+-- getgenv().outlinetrans = 0.5
+-- getgenv().uselocalplayer = false
+]]
+
+-- Helper to get a config value with fallback
+local function get(var, fallback)
+    return (getgenv()[var] ~= nil) and getgenv()[var] or fallback
+end
+
+-- Create or reset ESP holder
 local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
 
--- Setup or reuse ESP holder
-local holder = CoreGui:FindFirstChild("ESPHolder") or Instance.new("Folder")
-if not holder:IsDescendantOf(CoreGui) or holder.Name ~= "ESPHolder" then
-    holder.Name = "ESPHolder"
-    holder.Parent = CoreGui
-end
-
--- Cleanup if disabled
-if enabled == false then
+local holder = CoreGui:FindFirstChild("ESPHolder")
+if holder then
     holder:Destroy()
-    return
 end
 
--- Remove local player's ESP if needed
-if uselocalplayer == false and holder:FindFirstChild(Players.LocalPlayer.Name) then
-    holder:FindFirstChild(Players.LocalPlayer.Name):Destroy()
-end
+holder = Instance.new("Folder")
+holder.Name = "ESPHolder"
+holder.Parent = CoreGui
 
--- Re-toggle to force refresh (library behavior)
-if getgenv().enabled == true then 
-    getgenv().enabled = false
-    getgenv().enabled = true
-end
+-- Clean up ESP on player removal
+Players.PlayerRemoving:Connect(function(player)
+    local esp = holder:FindFirstChild(player.Name)
+    if esp then
+        esp:Destroy()
+    end
+end)
 
--- Main ESP logic
-RunService.Heartbeat:Connect(function()
-    if not getgenv().enabled then return end
+-- Create ESP for a player
+local function createESP(player)
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not get("uselocalplayer", false) and player == Players.LocalPlayer then return end
 
-    for _, player in pairs(Players:GetPlayers()) do
-        if not uselocalplayer and player == Players.LocalPlayer then
-            continue
-        end
-
-        local character = player.Character
-        if not character then continue end
-
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-
-        if not humanoid or not rootPart then continue end
-
-        -- Skip dead players
-        if humanoid.Health <= 0 then
-            if holder:FindFirstChild(player.Name) then
-                holder[player.Name]:Destroy()
-            end
-            continue
-        end
-
-        -- Skip fully invisible characters (RootPart transparency = 1 or character Transparency = 1)
-        local isInvisible = rootPart.Transparency >= 1
-        for _, part in pairs(character:GetChildren()) do
-            if part:IsA("BasePart") and part.Transparency < 1 then
-                isInvisible = false
-                break
-            end
-        end
-        if isInvisible then
-            if holder:FindFirstChild(player.Name) then
-                holder[player.Name]:Destroy()
-            end
-            continue
-        end
-
-        -- Check for valid rig type (R6 or R15)
-        local rig = humanoid.RigType
-        if rig ~= Enum.HumanoidRigType.R6 and rig ~= Enum.HumanoidRigType.R15 then
-            if holder:FindFirstChild(player.Name) then
-                holder[player.Name]:Destroy()
-            end
-            continue
-        end
-
-        -- Create or update Highlight
-        local esp = holder:FindFirstChild(player.Name)
-        if not esp then
-            esp = Instance.new("Highlight")
-            esp.Name = player.Name
-            esp.Parent = holder
-        end
-
-        esp.Adornee = rootPart
-        esp.FillColor = filluseteamcolor and player.TeamColor.Color or fillcolor
-        esp.OutlineColor = outlineuseteamcolor and player.TeamColor.Color or outlinecolor
-        esp.FillTransparency = filltrans
-        esp.OutlineTransparency = outlinetrans
-        esp.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    local esp = holder:FindFirstChild(player.Name)
+    if not esp then
+        esp = Instance.new("Highlight")
+        esp.Name = player.Name
+        esp.Parent = holder
     end
 
-    -- Clean up ESPs for players who have left
-    for _, highlight in pairs(holder:GetChildren()) do
-        if not Players:FindFirstChild(highlight.Name) then
-            highlight:Destroy()
-        end
+    esp.Adornee = player.Character
+    esp.FillColor = get("filluseteamcolor", true) and player.TeamColor.Color or get("fillcolor", Color3.new(0, 0, 0))
+    esp.OutlineColor = get("outlineuseteamcolor", true) and player.TeamColor.Color or get("outlinecolor", Color3.new(1, 1, 1))
+    esp.FillTransparency = get("filltrans", 0.5)
+    esp.OutlineTransparency = get("outlinetrans", 0.5)
+    esp.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+-- Update ESPs every frame
+game:GetService("RunService").Heartbeat:Connect(function()
+    if not get("enabled", false) then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        createESP(player)
     end
+end)
+
+-- ESP on new players
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        if get("enabled", false) then
+            createESP(player)
+        end
+    end)
 end)

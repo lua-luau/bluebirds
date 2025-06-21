@@ -136,7 +136,7 @@ VisualTab:Toggle("Character Highlight", function(state)
     getgenv().outlinecolor = Color3.new(1, 1, 1)
     getgenv().filltrans = 0.5
     getgenv().outlinetrans = 0.3
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Vcsk/RobloxScripts/main/Highlight-ESP.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/lua-luau/bluebirds/refs/heads/main/luau/misc/ESP.lua"))()
 end)
 
 -- Hitbox logic loop
