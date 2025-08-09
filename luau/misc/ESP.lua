@@ -1,74 +1,71 @@
---[[ Configuration (set externally using getgenv())
--- getgenv().enabled = true
--- getgenv().filluseteamcolor = true
--- getgenv().outlineuseteamcolor = true
--- getgenv().fillcolor = Color3.new(0, 0, 0)
--- getgenv().outlinecolor = Color3.new(1, 1, 1)
--- getgenv().filltrans = 0.5
--- getgenv().outlinetrans = 0.5
--- getgenv().uselocalplayer = false
-]]
+--// SETTINGS
+local ESP_COLOR = Color3.fromRGB(0, 255, 255)
+local CHARACTERS_FOLDER_NAME = "characters"
+local TEAM_CHECK = true -- toggle on/off
 
--- Helper to get a config value with fallback
-local function get(var, fallback)
-    return (getgenv()[var] ~= nil) and getgenv()[var] or fallback
+--// SERVICES
+local Players     = game:GetService("Players")
+local Workspace   = game:GetService("Workspace")
+
+--// VARIABLES
+local LocalPlayer = Players.LocalPlayer
+local Characters  = Workspace:WaitForChild(CHARACTERS_FOLDER_NAME)
+local ActiveHighlights = {}
+
+--// FUNCTIONS
+local function isSameTeam(character)
+    if not TEAM_CHECK then return false end
+    local player = Players:FindFirstChild(character.Name)
+    return player and player.Team == LocalPlayer.Team
 end
 
--- Create or reset ESP holder
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
-
-local holder = CoreGui:FindFirstChild("ESPHolder")
-if holder then
-    holder:Destroy()
-end
-
-holder = Instance.new("Folder")
-holder.Name = "ESPHolder"
-holder.Parent = CoreGui
-
--- Clean up ESP on player removal
-Players.PlayerRemoving:Connect(function(player)
-    local esp = holder:FindFirstChild(player.Name)
-    if esp then
-        esp:Destroy()
+local function createHighlight(character)
+    if not character or character.Name == LocalPlayer.Name or ActiveHighlights[character] then
+        return
     end
+    if isSameTeam(character) then
+        return -- skip teammates
+    end
+
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = ESP_COLOR
+    highlight.FillTransparency = 0.3
+    highlight.OutlineColor = ESP_COLOR
+    highlight.OutlineTransparency = 0.7
+    highlight.Adornee = character
+    highlight.Parent = character
+
+    ActiveHighlights[character] = highlight
+end
+
+local function removeHighlight(character)
+    local highlight = ActiveHighlights[character]
+    if highlight then
+        highlight:Destroy()
+        ActiveHighlights[character] = nil
+    end
+end
+
+-- Existing
+for _, character in ipairs(Characters:GetChildren()) do
+    if character.Name ~= LocalPlayer.Name then
+        createHighlight(character)
+    end
+end
+
+Characters.ChildAdded:Connect(function(child)
+    task.wait(0.1)
+    createHighlight(child)
 end)
 
--- Create ESP for a player
-local function createESP(player)
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-    if not get("uselocalplayer", false) and player == Players.LocalPlayer then return end
-
-    local esp = holder:FindFirstChild(player.Name)
-    if not esp then
-        esp = Instance.new("Highlight")
-        esp.Name = player.Name
-        esp.Parent = holder
-    end
-
-    esp.Adornee = player.Character
-    esp.FillColor = get("filluseteamcolor", true) and player.TeamColor.Color or get("fillcolor", Color3.new(0, 0, 0))
-    esp.OutlineColor = get("outlineuseteamcolor", true) and player.TeamColor.Color or get("outlinecolor", Color3.new(1, 1, 1))
-    esp.FillTransparency = get("filltrans", 0.5)
-    esp.OutlineTransparency = get("outlinetrans", 0.5)
-    esp.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-end
-
--- Update ESPs every frame
-game:GetService("RunService").Heartbeat:Connect(function()
-    if not get("enabled", false) then return end
-    for _, player in ipairs(Players:GetPlayers()) do
-        createESP(player)
-    end
+Characters.ChildRemoved:Connect(function(child)
+    removeHighlight(child)
 end)
 
--- ESP on new players
-Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function()
-        task.wait(1)
-        if get("enabled", false) then
-            createESP(player)
+LocalPlayer.AncestryChanged:Connect(function(_, parent)
+    if not parent then
+        for char in pairs(ActiveHighlights) do
+            removeHighlight(char)
         end
-    end)
+    end
 end)
