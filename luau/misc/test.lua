@@ -49,7 +49,7 @@ end
 
 local function create3DBox()
     local boxLines = {}
-    for i = 1, 12 do -- a box has 12 edges
+    for i = 1, 12 do -- 12 edges in a box
         local line = Drawing.new("Line")
         line.Color = ESP_COLOR
         line.Thickness = ESP_THICKNESS
@@ -117,15 +117,14 @@ local function updateESP(character)
             end      
         end      
     else
-        -- 3D Box ESP
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        local hum = character:FindFirstChildOfClass("Humanoid")
+        -- 3D Box ESP for custom rig
+        local torso = character:FindFirstChild("torso")
 
-        if hrp and hum then
-            local cf = hrp.CFrame
-            local size = Vector3.new(4, hum.HipHeight * 2 + 2, 2) -- width, height, depth
+        if torso then
+            local cf = torso.CFrame
+            local size = Vector3.new(4, 6, 2) -- adjust to fit your rig properly
 
-            -- 8 corners of the box relative to HRP
+            -- 8 corners of the box relative to torso
             local corners = {
                 Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
                 Vector3.new(-size.X/2, -size.Y/2,  size.Z/2),
