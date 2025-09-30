@@ -1,8 +1,8 @@
 -- LocalScript for Roblox Luau: Draws skeletons on other players (R6 and R15) using Drawing library
 -- Toggle ESP with ']' key. Toggle rainbow mode with '[' key.
--- Press 'T' to toggle camera zoom (magnified scope).
--- Settings via getgenv().ESPSettings for easy reloading (TeamCheck, RainbowEnabled, etc.).
--- Client-side ESP, polished with efficient updates and cleanup.
+-- Press 'T' to toggle camera zoom (magnified scope, persists through aiming).
+-- Settings via getgenv().ESPSettings for reloading. Includes TeamCheck.
+-- Client-side ESP with debug prints for troubleshooting.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -20,11 +20,11 @@ getgenv().ESPSettings = getgenv().ESPSettings or {
     LineColor = Color3.fromRGB(255, 255, 255),  -- Default color if not rainbow
     ZoomEnabled = false,
     NormalFOV = Camera.FieldOfView,  -- Store default FOV
-    ZoomedFOV = 20  -- Magnified scope FOV (adjust as needed)
+    ZoomedFOV = 20  -- Magnified scope FOV
 }
 
 local settings = getgenv().ESPSettings
-local skeletons = {}  -- {player = {lines = {{part1Name, part2Name, lineObj}, ...}, rigType = "R6" or "R15"}}
+local skeletons = {}  -- {player = {lines = {{part1Name, part2Name, line}, ...}, rigType = "R6" or "R15"}}
 
 -- Define bone connections for R6 and R15
 local boneConfigs = {
@@ -59,14 +59,15 @@ local function getRigType(character)
     if humanoid then
         return humanoid.RigType == Enum.HumanoidRigType.R15 and "R15" or "R6"
     end
-    return "R6"  -- Default to R6 if humanoid not found
+    return "R6"
 end
 
--- Function to create skeleton drawing objects for a character
+-- Function to create skeleton drawing objects
 local function createSkeleton(character)
     local rigType = getRigType(character)
     local bones = boneConfigs[rigType]
     local lines = {}
+    print("Creating skeleton for", character.Name, "RigType:", rigType)
     
     for _, bone in ipairs(bones) do
         local line = Drawing.new("Line")
@@ -74,13 +75,14 @@ local function createSkeleton(character)
         line.Color = settings.LineColor
         line.Thickness = settings.LineThickness
         line.Transparency = 1
-        table.insert(lines, {bone[1], bone[2], line})
+        table.insert(lines, {part1Name = bone[1], part2Name = bone[2], line = line})
+        print("Created line for", bone[1], "to", bone[2])
     end
     
     return {lines = lines, rigType = rigType}
 end
 
--- Function to get rainbow color based on time
+-- Function to get rainbow color
 local function getRainbowColor()
     local time = tick() * settings.RainbowSpeed
     local r = math.sin(time) * 127 + 128
@@ -89,19 +91,21 @@ local function getRainbowColor()
     return Color3.fromRGB(r, g, b)
 end
 
--- Function to update skeleton visibility and positions
+-- Function to update skeleton
 local function updateSkeleton(player, character, skeletonData)
     if settings.TeamCheck and player.Team == LocalPlayer.Team then
+        print("Skipping", player.Name, "due to team check")
         for _, lineData in ipairs(skeletonData.lines) do
-            lineData[3].Visible = false
+            lineData.line.Visible = false
         end
         return
     end
     
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid or humanoid.Health <= 0 then
+        print("Skipping", player.Name, "due to no humanoid or dead")
         for _, lineData in ipairs(skeletonData.lines) do
-            lineData[3].Visible = false
+            lineData.line.Visible = false
         end
         return
     end
@@ -109,9 +113,9 @@ local function updateSkeleton(player, character, skeletonData)
     local color = settings.RainbowEnabled and getRainbowColor() or settings.LineColor
     
     for _, lineData in ipairs(skeletonData.lines) do
-        local part1 = character:FindFirstChild(lineData[1])
-        local part2 = character:FindFirstChild(lineData[2])
-        local line = lineData[3]
+        local part1 = character:FindFirstChild(lineData.part1Name)
+        local part2 = character:FindFirstChild(lineData.part2Name)
+        local line = lineData.line
         
         line.Color = color
         line.Thickness = settings.LineThickness
@@ -120,15 +124,20 @@ local function updateSkeleton(player, character, skeletonData)
             local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
             local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
             
-            if onScreen1 and onScreen2 then
+            if onScreen1 and onScreen2 and settings.Enabled then
                 line.From = Vector2.new(pos1.X, pos1.Y)
                 line.To = Vector2.new(pos2.X, pos2.Y)
-                line.Visible = settings.Enabled
+                line.Visible = true
+                -- print("Drawing line for", player.Name, lineData.part1Name, "to", lineData.part2Name)
             else
                 line.Visible = false
+                if not onScreen1 or not onScreen2 then
+                    -- print("Line not visible for", player.Name, "due to off-screen")
+                end
             end
         else
             line.Visible = false
+            print("Missing parts for", player.Name, ":", lineData.part1Name, lineData.part2Name)
         end
     end
 end
@@ -138,6 +147,7 @@ for _, player in ipairs(Players:GetPlayers()) do
     if player ~= LocalPlayer then
         player.CharacterAdded:Connect(function(char)
             skeletons[player] = createSkeleton(char)
+            print("Character added for", player.Name)
         end)
         if player.Character then
             skeletons[player] = createSkeleton(player.Character)
@@ -150,6 +160,7 @@ Players.PlayerAdded:Connect(function(player)
     if player ~= LocalPlayer then
         player.CharacterAdded:Connect(function(char)
             skeletons[player] = createSkeleton(char)
+            print("New player", player.Name, "added")
         end)
         if player.Character then
             skeletons[player] = createSkeleton(player.Character)
@@ -161,23 +172,23 @@ end)
 Players.PlayerRemoving:Connect(function(player)
     if skeletons[player] then
         for _, lineData in ipairs(skeletons[player].lines) do
-            lineData[3]:Remove()
+            lineData.line:Remove()
         end
         skeletons[player] = nil
+        print("Cleaned up skeleton for", player.Name)
     end
 end)
 
--- Handle character model changes (e.g., R6 to R15 switch)
+-- Handle character model changes (e.g., R6 to R15)
 local function onCharacterAppearanceChanged(player)
     if player ~= LocalPlayer and player.Character then
         if skeletons[player] then
-            -- Remove old skeleton
             for _, lineData in ipairs(skeletons[player].lines) do
-                lineData[3]:Remove()
+                lineData.line:Remove()
             end
         end
-        -- Create new skeleton for updated character
         skeletons[player] = createSkeleton(player.Character)
+        print("Updated skeleton for", player.Name)
     end
 end
 
@@ -204,10 +215,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if keyCode == Enum.KeyCode.RightBracket then  -- ']' to toggle ESP
         settings.Enabled = not settings.Enabled
         if not settings.Enabled then
-            -- Hide all skeletons immediately
             for _, skeletonData in pairs(skeletons) do
                 for _, lineData in ipairs(skeletonData.lines) do
-                    lineData[3].Visible = false
+                    lineData.line.Visible = false
                 end
             end
         end
@@ -217,14 +227,29 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         print("Rainbow ESP: " .. (settings.RainbowEnabled and "Enabled" or "Disabled"))
     elseif keyCode == Enum.KeyCode.T then  -- 'T' to toggle zoom
         settings.ZoomEnabled = not settings.ZoomEnabled
-        Camera.FieldOfView = settings.ZoomEnabled and settings.ZoomedFOV or settings.NormalFOV
         print("Camera Zoom: " .. (settings.ZoomEnabled and "Enabled" or "Disabled"))
     end
 end)
 
--- Update loop (runs every frame)
+-- Update loop
 RunService.RenderStepped:Connect(function()
-    if not settings.Enabled then return end
+    -- Enforce zoom FOV to persist through in-game aiming
+    if settings.ZoomEnabled then
+        Camera.FieldOfView = settings.ZoomedFOV
+    else
+        Camera.FieldOfView = settings.NormalFOV
+    end
+    
+    -- Update skeletons
+    if not settings.Enabled then
+        for _, skeletonData in pairs(skeletons) do
+            for _, lineData in ipairs(skeletonData.lines) do
+                lineData.line.Visible = false
+            end
+        end
+        return
+    end
+    
     for player, skeletonData in pairs(skeletons) do
         local character = player.Character
         if character then
