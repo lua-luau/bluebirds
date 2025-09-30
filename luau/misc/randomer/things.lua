@@ -1,5 +1,8 @@
 -- LocalScript for Roblox Luau: Draws skeletons on other players (R6 and R15) using Drawing library
--- Toggle with 'T' key. Client-side ESP, polished with efficient updates and cleanup.
+-- Toggle ESP with ']' key. Toggle rainbow mode with '[' key.
+-- Press 'T' to toggle camera zoom (magnified scope).
+-- Settings via getgenv().ESPSettings for easy reloading (TeamCheck, RainbowEnabled, etc.).
+-- Client-side ESP, polished with efficient updates and cleanup.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,7 +10,20 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-local enabled = false
+-- Settings via getgenv() for reloadability
+getgenv().ESPSettings = getgenv().ESPSettings or {
+    Enabled = false,
+    RainbowEnabled = false,
+    TeamCheck = true,  -- If true, don't draw on teammates
+    RainbowSpeed = 1,  -- Speed of rainbow cycle (higher = faster)
+    LineThickness = 1.5,
+    LineColor = Color3.fromRGB(255, 255, 255),  -- Default color if not rainbow
+    ZoomEnabled = false,
+    NormalFOV = Camera.FieldOfView,  -- Store default FOV
+    ZoomedFOV = 20  -- Magnified scope FOV (adjust as needed)
+}
+
+local settings = getgenv().ESPSettings
 local skeletons = {}  -- {player = {lines = {{part1Name, part2Name, lineObj}, ...}, rigType = "R6" or "R15"}}
 
 -- Define bone connections for R6 and R15
@@ -55,8 +71,8 @@ local function createSkeleton(character)
     for _, bone in ipairs(bones) do
         local line = Drawing.new("Line")
         line.Visible = false
-        line.Color = Color3.fromRGB(255, 255, 255)  -- White
-        line.Thickness = 1.5
+        line.Color = settings.LineColor
+        line.Thickness = settings.LineThickness
         line.Transparency = 1
         table.insert(lines, {bone[1], bone[2], line})
     end
@@ -64,21 +80,41 @@ local function createSkeleton(character)
     return {lines = lines, rigType = rigType}
 end
 
+-- Function to get rainbow color based on time
+local function getRainbowColor()
+    local time = tick() * settings.RainbowSpeed
+    local r = math.sin(time) * 127 + 128
+    local g = math.sin(time + math.pi * 2 / 3) * 127 + 128
+    local b = math.sin(time + math.pi * 4 / 3) * 127 + 128
+    return Color3.fromRGB(r, g, b)
+end
+
 -- Function to update skeleton visibility and positions
 local function updateSkeleton(player, character, skeletonData)
-    local lines = skeletonData.lines
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then
-        for _, lineData in ipairs(lines) do
+    if settings.TeamCheck and player.Team == LocalPlayer.Team then
+        for _, lineData in ipairs(skeletonData.lines) do
             lineData[3].Visible = false
         end
         return
     end
     
-    for _, lineData in ipairs(lines) do
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        for _, lineData in ipairs(skeletonData.lines) do
+            lineData[3].Visible = false
+        end
+        return
+    end
+    
+    local color = settings.RainbowEnabled and getRainbowColor() or settings.LineColor
+    
+    for _, lineData in ipairs(skeletonData.lines) do
         local part1 = character:FindFirstChild(lineData[1])
         local part2 = character:FindFirstChild(lineData[2])
         local line = lineData[3]
+        
+        line.Color = color
+        line.Thickness = settings.LineThickness
         
         if part1 and part2 then
             local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
@@ -87,7 +123,7 @@ local function updateSkeleton(player, character, skeletonData)
             if onScreen1 and onScreen2 then
                 line.From = Vector2.new(pos1.X, pos1.Y)
                 line.To = Vector2.new(pos2.X, pos2.Y)
-                line.Visible = enabled
+                line.Visible = settings.Enabled
             else
                 line.Visible = false
             end
@@ -160,12 +196,14 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
--- Toggle functionality (press 'T')
+-- Input handling
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.T then
-        enabled = not enabled
-        if not enabled then
+    local keyCode = input.KeyCode
+    
+    if keyCode == Enum.KeyCode.RightBracket then  -- ']' to toggle ESP
+        settings.Enabled = not settings.Enabled
+        if not settings.Enabled then
             -- Hide all skeletons immediately
             for _, skeletonData in pairs(skeletons) do
                 for _, lineData in ipairs(skeletonData.lines) do
@@ -173,13 +211,20 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 end
             end
         end
-        print("Skeleton ESP: " .. (enabled and "Enabled" or "Disabled"))
+        print("Skeleton ESP: " .. (settings.Enabled and "Enabled" or "Disabled"))
+    elseif keyCode == Enum.KeyCode.LeftBracket then  -- '[' to toggle rainbow
+        settings.RainbowEnabled = not settings.RainbowEnabled
+        print("Rainbow ESP: " .. (settings.RainbowEnabled and "Enabled" or "Disabled"))
+    elseif keyCode == Enum.KeyCode.T then  -- 'T' to toggle zoom
+        settings.ZoomEnabled = not settings.ZoomEnabled
+        Camera.FieldOfView = settings.ZoomEnabled and settings.ZoomedFOV or settings.NormalFOV
+        print("Camera Zoom: " .. (settings.ZoomEnabled and "Enabled" or "Disabled"))
     end
 end)
 
--- Update loop (runs every frame when enabled)
+-- Update loop (runs every frame)
 RunService.RenderStepped:Connect(function()
-    if not enabled then return end
+    if not settings.Enabled then return end
     for player, skeletonData in pairs(skeletons) do
         local character = player.Character
         if character then
