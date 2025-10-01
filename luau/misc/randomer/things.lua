@@ -1,4 +1,4 @@
--- Pooling-friendly skeleton ESP
+-- Pooling-friendly skeleton ESP with FOV Changer
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -12,9 +12,13 @@ getgenv().ESPSettings = getgenv().ESPSettings or {
     RainbowSpeed = 1,
     LineThickness = 1.5,
     LineColor = Color3.fromRGB(255, 255, 255),
-    ZoomEnabled = false,
-    NormalFOV = Camera.FieldOfView,
-    ZoomedFOV = 20
+
+    -- FOV Changer
+    FOVChangerEnabled = false,
+    CurrentFOV = Camera.FieldOfView,
+    MinFOV = 20,
+    MaxFOV = 120,
+    ScrollStep = 2 -- how much the FOV changes per scroll "tick"
 }
 
 local settings = getgenv().ESPSettings
@@ -102,14 +106,13 @@ local function updateSkeleton(player, character, skeletonData)
     end
 end
 
--- Reuse existing skeleton lines, don't remove them
+-- Reuse existing skeleton lines
 local function attachCharacter(player, character)
     if skeletons[player] then
         local skel = skeletons[player]
         skel.character = character
         local rigType = getRigType(character)
         if rigType ~= skel.rigType then
-            -- Update bones but reuse lines
             local bones = boneConfigs[rigType]
             for i, bone in ipairs(bones) do
                 if skel.lines[i] then
@@ -156,13 +159,27 @@ UserInputService.InputBegan:Connect(function(input, gp)
     elseif input.KeyCode == Enum.KeyCode.LeftBracket then
         settings.RainbowEnabled = not settings.RainbowEnabled
     elseif input.KeyCode == Enum.KeyCode.T then
-        settings.ZoomEnabled = not settings.ZoomEnabled
+        settings.FOVChangerEnabled = not settings.FOVChangerEnabled
+    end
+end)
+
+-- Scroll wheel for FOV adjustment
+UserInputService.InputChanged:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType == Enum.UserInputType.MouseWheel and settings.FOVChangerEnabled then
+        local delta = input.Position.Z
+        settings.CurrentFOV = math.clamp(settings.CurrentFOV - delta * settings.ScrollStep, settings.MinFOV, settings.MaxFOV)
     end
 end)
 
 -- Main loop
 RunService.RenderStepped:Connect(function()
-    Camera.FieldOfView = settings.ZoomEnabled and settings.ZoomedFOV or settings.NormalFOV
+    if settings.FOVChangerEnabled then
+        Camera.FieldOfView = settings.CurrentFOV
+    else
+        Camera.FieldOfView = settings.CurrentFOV -- default stays at last set FOV
+    end
+
     for player, skel in pairs(skeletons) do
         if skel.character then updateSkeleton(player, skel.character, skel) end
     end
