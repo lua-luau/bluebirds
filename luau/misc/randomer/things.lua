@@ -1,186 +1,96 @@
--- Pooling-friendly skeleton ESP with FOV Changer
+-- Lightweight Skeleton ESP (R6 only)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-getgenv().ESPSettings = getgenv().ESPSettings or {
-    Enabled = false,
-    RainbowEnabled = false,
+getgenv().ESPSettings = {
+    Enabled = true,
+    Rainbow = false,
     TeamCheck = true,
-    RainbowSpeed = 1,
     LineThickness = 1.5,
-    LineColor = Color3.fromRGB(255, 255, 255),
-
-    -- FOV Changer
-    FOVChangerEnabled = false,
-    CurrentFOV = Camera.FieldOfView,
-    MinFOV = 20,
-    MaxFOV = 120,
-    ScrollStep = 2 -- how much the FOV changes per scroll "tick"
+    LineColor = Color3.fromRGB(255,255,255)
 }
 
 local settings = getgenv().ESPSettings
-local skeletons = {} -- player -> skeletonData
+local skeletons = {}
 
-local boneConfigs = {
-    R6 = {{"Head","Torso"},{"Torso","Right Arm"},{"Torso","Left Arm"},{"Torso","Right Leg"},{"Torso","Left Leg"}},
-    R15 = {
-        {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
-        {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
-        {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
-        {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
-        {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"}
-    }
+-- Always use R6 skeleton (lighter)
+local bonesR6 = {
+    {"Head","Torso"},
+    {"Torso","Right Arm"},{"Torso","Left Arm"},
+    {"Torso","Right Leg"},{"Torso","Left Leg"}
 }
 
-local function getRigType(character)
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if humanoid then return humanoid.RigType == Enum.HumanoidRigType.R15 and "R15" or "R6" end
-    return "R6"
-end
-
-local function getRainbowColor()
-    local t = tick() * settings.RainbowSpeed
+local function rainbow()
+    local t = tick()*2
     return Color3.fromRGB(
-        math.floor(math.sin(t) * 127 + 128),
-        math.floor(math.sin(t + 2/3*math.pi) * 127 + 128),
-        math.floor(math.sin(t + 4/3*math.pi) * 127 + 128)
+        math.sin(t)*127+128,
+        math.sin(t+2)*127+128,
+        math.sin(t+4)*127+128
     )
 end
 
--- Create skeleton with pooled lines
-local function createSkeleton(character)
-    local rigType = getRigType(character)
-    local bones = boneConfigs[rigType]
+local function newSkeleton(char)
     local lines = {}
-
-    for _, bone in ipairs(bones) do
-        local line = Drawing.new("Line")
-        line.Visible = false
-        line.Color = settings.LineColor
-        line.Thickness = settings.LineThickness
-        line.Transparency = 1
-        table.insert(lines, {part1Name = bone[1], part2Name = bone[2], line = line})
+    for _,bone in ipairs(bonesR6) do
+        local l = Drawing.new("Line")
+        l.Visible = false
+        l.Thickness = settings.LineThickness
+        l.Color = settings.LineColor
+        lines[#lines+1] = {a=bone[1],b=bone[2],line=l}
     end
-
-    return {lines = lines, rigType = rigType, character = character}
+    return {char=char,lines=lines}
 end
 
--- Update skeleton positions
-local function updateSkeleton(player, character, skeletonData)
-    if settings.TeamCheck and LocalPlayer.Team and player.Team == LocalPlayer.Team then
-        for _, l in ipairs(skeletonData.lines) do l.line.Visible = false end
+local function updateSkeleton(player, skel)
+    if settings.TeamCheck and LocalPlayer.Team and player.Team==LocalPlayer.Team then
+        for _,d in ipairs(skel.lines) do d.line.Visible=false end
         return
     end
-
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then
-        for _, l in ipairs(skeletonData.lines) do l.line.Visible = false end
+    local hum = skel.char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health<=0 then
+        for _,d in ipairs(skel.lines) do d.line.Visible=false end
         return
     end
-
-    local color = settings.RainbowEnabled and getRainbowColor() or settings.LineColor
-
-    for _, l in ipairs(skeletonData.lines) do
-        local p1 = character:FindFirstChild(l.part1Name)
-        local p2 = character:FindFirstChild(l.part2Name)
-        local line = l.line
+    local color = settings.Rainbow and rainbow() or settings.LineColor
+    for _,d in ipairs(skel.lines) do
+        local p1 = skel.char:FindFirstChild(d.a)
+        local p2 = skel.char:FindFirstChild(d.b)
+        local line = d.line
         line.Color = color
-        line.Thickness = settings.LineThickness
-
         if p1 and p2 then
-            local pos1, vis1 = Camera:WorldToViewportPoint(p1.Position)
-            local pos2, vis2 = Camera:WorldToViewportPoint(p2.Position)
-            if vis1 and vis2 and settings.Enabled then
-                line.From = Vector2.new(pos1.X, pos1.Y)
-                line.To = Vector2.new(pos2.X, pos2.Y)
+            local pos1,v1 = Camera:WorldToViewportPoint(p1.Position)
+            local pos2,v2 = Camera:WorldToViewportPoint(p2.Position)
+            if v1 and v2 and settings.Enabled then
+                line.From = Vector2.new(pos1.X,pos1.Y)
+                line.To   = Vector2.new(pos2.X,pos2.Y)
                 line.Visible = true
-            else
-                line.Visible = false
-            end
-        else
-            line.Visible = false
-        end
+            else line.Visible=false end
+        else line.Visible=false end
     end
 end
 
--- Reuse existing skeleton lines
-local function attachCharacter(player, character)
-    if skeletons[player] then
-        local skel = skeletons[player]
-        skel.character = character
-        local rigType = getRigType(character)
-        if rigType ~= skel.rigType then
-            local bones = boneConfigs[rigType]
-            for i, bone in ipairs(bones) do
-                if skel.lines[i] then
-                    skel.lines[i].part1Name = bone[1]
-                    skel.lines[i].part2Name = bone[2]
-                else
-                    local line = Drawing.new("Line")
-                    line.Visible = false
-                    line.Color = settings.LineColor
-                    line.Thickness = settings.LineThickness
-                    line.Transparency = 1
-                    table.insert(skel.lines, {part1Name=bone[1], part2Name=bone[2], line=line})
-                end
-            end
-            skel.rigType = rigType
-        end
-    else
-        skeletons[player] = createSkeleton(character)
-    end
+-- Player handling
+local function setup(p)
+    if p==LocalPlayer then return end
+    local function attach(c) skeletons[p]=newSkeleton(c) end
+    p.CharacterAdded:Connect(attach)
+    if p.Character then attach(p.Character) end
 end
 
--- Player setup
-local function setupPlayer(player)
-    if player == LocalPlayer then return end
-    player.CharacterAdded:Connect(function(char) attachCharacter(player,char) end)
-    player.CharacterAppearanceLoaded:Connect(function() if player.Character then attachCharacter(player,player.Character) end end)
-    if player.Character then attachCharacter(player,player.Character) end
-end
-
-for _, p in ipairs(Players:GetPlayers()) do setupPlayer(p) end
-Players.PlayerAdded:Connect(setupPlayer)
-Players.PlayerRemoving:Connect(function(player)
-    if skeletons[player] then
-        for _, l in ipairs(skeletons[player].lines) do l.line.Visible = false end
-        skeletons[player] = nil
-    end
-end)
-
--- Input
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.RightBracket then
-        settings.Enabled = not settings.Enabled
-    elseif input.KeyCode == Enum.KeyCode.LeftBracket then
-        settings.RainbowEnabled = not settings.RainbowEnabled
-    elseif input.KeyCode == Enum.KeyCode.T then
-        settings.FOVChangerEnabled = not settings.FOVChangerEnabled
-    end
-end)
-
--- Scroll wheel for FOV adjustment
-UserInputService.InputChanged:Connect(function(input, gp)
-    if gp then return end
-    if input.UserInputType == Enum.UserInputType.MouseWheel and settings.FOVChangerEnabled then
-        local delta = input.Position.Z
-        settings.CurrentFOV = math.clamp(settings.CurrentFOV - delta * settings.ScrollStep, settings.MinFOV, settings.MaxFOV)
+for _,p in ipairs(Players:GetPlayers()) do setup(p) end
+Players.PlayerAdded:Connect(setup)
+Players.PlayerRemoving:Connect(function(p)
+    if skeletons[p] then
+        for _,d in ipairs(skeletons[p].lines) do d.line:Remove() end
+        skeletons[p]=nil
     end
 end)
 
 -- Main loop
 RunService.RenderStepped:Connect(function()
-    if settings.FOVChangerEnabled then
-        Camera.FieldOfView = settings.CurrentFOV
-    else
-        Camera.FieldOfView = settings.CurrentFOV -- default stays at last set FOV
-    end
-
-    for player, skel in pairs(skeletons) do
-        if skel.character then updateSkeleton(player, skel.character, skel) end
+    for pl,skel in pairs(skeletons) do
+        if skel.char then updateSkeleton(pl,skel) end
     end
 end)
