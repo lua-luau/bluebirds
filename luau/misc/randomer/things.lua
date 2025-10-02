@@ -9,106 +9,131 @@ getgenv().Enabled = getgenv().Enabled or true
 getgenv().Rainbow = getgenv().Rainbow or false
 
 local skeletons = {}
+local linePool = {} -- line reuse pool
+
+-- R6-style connections (simplified for R15 too)
+local connectionsTemplate = {
+    {"Head", "Torso"},
+    {"Torso", "Left Arm"},
+    {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"},
+    {"Torso", "Right Leg"},
+}
+
+-- Line pool helper
+local function getLine()
+    for i, line in ipairs(linePool) do
+        table.remove(linePool, i)
+        return line
+    end
+    local newLine = Drawing.new("Line")
+    newLine.Color = Color3.new(1,0,0)
+    newLine.Thickness = 2
+    newLine.Transparency = 1
+    newLine.Visible = false
+    return newLine
+end
+
+local function returnLines(drawings)
+    for _, d in ipairs(drawings) do
+        d.line.Visible = false
+        table.insert(linePool, d.line)
+    end
+end
 
 local function createSkeleton(player)
     if player == LocalPlayer then return end
     local char = player.Character
-    if not char or not char:FindFirstChild("Torso") then return end
-    
+    if not char then return end
+
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local rigType = humanoid.RigType
     local drawings = {}
-    local connections = {
-        {char.Head, char.Torso}, -- Neck
-        {char.Torso, char["Left Arm"]}, -- Left Shoulder
-        {char.Torso, char["Right Arm"]}, -- Right Shoulder
-        {char.Torso, char["Left Leg"]}, -- Left Hip
-        {char.Torso, char["Right Leg"]}, -- Right Hip
-    }
-    
-    for _, conn in ipairs(connections) do
-        local part1, part2 = conn[1], conn[2]
+    local connections = {}
+
+    for _, conn in ipairs(connectionsTemplate) do
+        local part1, part2 = nil, nil
+        if rigType == Enum.HumanoidRigType.R6 then
+            part1 = char:FindFirstChild(conn[1])
+            part2 = char:FindFirstChild(conn[2])
+        else -- R15 -> R6 approximation
+            local mapping = {
+                Head = char:FindFirstChild("Head"),
+                Torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("LowerTorso"),
+                ["Left Arm"] = char:FindFirstChild("LeftUpperArm"),
+                ["Right Arm"] = char:FindFirstChild("RightUpperArm"),
+                ["Left Leg"] = char:FindFirstChild("LeftUpperLeg"),
+                ["Right Leg"] = char:FindFirstChild("RightUpperLeg"),
+            }
+            part1 = mapping[conn[1]]
+            part2 = mapping[conn[2]]
+        end
+
         if part1 and part2 then
-            local line = Drawing.new("Line")
-            line.Color = Color3.new(1, 0, 0) -- Red
-            line.Thickness = 2
-            line.Transparency = 1
-            table.insert(drawings, line)
+            local line = getLine()
+            table.insert(drawings, {line = line, part1 = part1, part2 = part2})
+            table.insert(connections, {part1, part2})
         end
     end
-    
+
     skeletons[player] = {drawings = drawings, connections = connections}
+
+    humanoid.Died:Connect(function()
+        returnLines(drawings)
+        skeletons[player] = nil
+    end)
 end
 
 local function updateSkeleton(player)
     local data = skeletons[player]
     if not data then return end
-    
     local char = player.Character
-    if not char or not char.Parent then
-        for _, line in ipairs(data.drawings) do
-            line:Remove()
-        end
-        skeletons[player] = nil
-        return
-    end
-    
+    if not char then return end
+
     if not getgenv().Enabled then
-        for _, line in ipairs(data.drawings) do
-            line.Visible = false
+        for _, d in ipairs(data.drawings) do
+            d.line.Visible = false
         end
         return
     end
-    
-    -- Team check
+
     if getgenv().TeamCheck and player.Team == LocalPlayer.Team then
-        for _, line in ipairs(data.drawings) do
-            line.Visible = false
+        for _, d in ipairs(data.drawings) do
+            d.line.Visible = false
         end
         return
     end
-    
-    -- Set color
+
+    local color = Color3.new(1, 0, 0)
     if getgenv().Rainbow then
-        local hue = (tick() % 3) / 3
-        local color = Color3.fromHSV(hue, 1, 1)
-        for _, line in ipairs(data.drawings) do
-            line.Color = color
-        end
-    else
-        for _, line in ipairs(data.drawings) do
-            line.Color = Color3.new(1, 0, 0)
-        end
+        local hue = (tick() % 5) / 5
+        color = Color3.fromHSV(hue, 1, 1)
     end
-    
-    for i, line in ipairs(data.drawings) do
-        local part1, part2 = data.connections[i][1], data.connections[i][2]
-        if part1 and part2 and part1.Parent and part2.Parent then
-            local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
-            local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
+
+    for _, d in ipairs(data.drawings) do
+        local p1, p2 = d.part1, d.part2
+        if p1 and p2 and p1.Parent and p2.Parent then
+            local pos1, onScreen1 = Camera:WorldToViewportPoint(p1.Position)
+            local pos2, onScreen2 = Camera:WorldToViewportPoint(p2.Position)
             if onScreen1 and onScreen2 then
-                line.From = Vector2.new(pos1.X, pos1.Y)
-                line.To = Vector2.new(pos2.X, pos2.Y)
-                line.Visible = true
+                d.line.From = Vector2.new(pos1.X, pos1.Y)
+                d.line.To = Vector2.new(pos2.X, pos2.Y)
+                d.line.Color = color
+                d.line.Visible = true
             else
-                line.Visible = false
+                d.line.Visible = false
             end
         else
-            line.Visible = false
+            d.line.Visible = false
         end
-    end
-end
-
-local function removeSkeleton(player)
-    local data = skeletons[player]
-    if data then
-        for _, line in ipairs(data.drawings) do
-            line:Remove()
-        end
-        skeletons[player] = nil
     end
 end
 
 local function onPlayerAdded(player)
     player.CharacterAdded:Connect(function()
+        repeat task.wait() until player.Character and player.Character:FindFirstChildOfClass("Humanoid")
         task.wait(0.1)
         createSkeleton(player)
     end)
@@ -122,7 +147,13 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(removeSkeleton)
+Players.PlayerRemoving:Connect(function(player)
+    local data = skeletons[player]
+    if data then
+        returnLines(data.drawings)
+        skeletons[player] = nil
+    end
+end)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
