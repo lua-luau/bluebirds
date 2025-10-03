@@ -19,8 +19,8 @@ local function getLine()
         return line
     end
     local newLine = Drawing.new("Line")
-    newLine.Color = Color3.new(1,0,0)
-    newLine.Thickness = 2
+    newLine.Color = Color3.fromRGB(0, 255, 255) -- default cyan
+    newLine.Thickness = 1
     newLine.Transparency = 1
     newLine.Visible = false
     return newLine
@@ -33,7 +33,15 @@ local function returnLines(lines)
     end
 end
 
--- Create a R6-style skeleton (even if character is R15)
+-- Clean and remove skeleton fully
+local function removeSkeleton(player)
+    if skeletons[player] then
+        returnLines(skeletons[player])
+        skeletons[player] = nil
+    end
+end
+
+-- Create skeleton
 local function createSkeleton(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -64,13 +72,23 @@ local function createSkeleton(player)
 
     skeletons[player] = lines
 
-    -- Remove skeleton on death
+    -- Auto-clean on death
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if humanoid then
         humanoid.Died:Connect(function()
-            returnLines(lines)
-            skeletons[player] = nil
+            removeSkeleton(player)
         end)
+    end
+
+    -- Auto-clean when parts are destroyed (limb removal, etc.)
+    for _, part in ipairs({Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg}) do
+        if part then
+            part.AncestryChanged:Connect(function(_, parent)
+                if not parent then
+                    removeSkeleton(player)
+                end
+            end)
+        end
     end
 end
 
@@ -80,8 +98,7 @@ local function updateSkeleton(player)
     if not lines then return end
     local char = player.Character
     if not char then
-        returnLines(lines)
-        skeletons[player] = nil
+        removeSkeleton(player)
         return
     end
 
@@ -97,27 +114,30 @@ local function updateSkeleton(player)
         return
     end
 
-    local color = Color3.new(1,0,0)
+    -- Color handling
+    local color = Color3.fromRGB(0, 255, 255) -- cyan by default
     if getgenv().Rainbow then
-        local hue = (tick()%5)/5
-        color = Color3.fromHSV(hue,1,1)
+        local hue = (tick() % 5) / 5
+        color = Color3.fromHSV(hue, 1, 1)
     end
 
     for _, d in ipairs(lines) do
         local p1, p2 = d.p1, d.p2
         if p1 and p2 and p1.Parent and p2.Parent then
-            local pos1 = Camera:WorldToViewportPoint(p1.Position)
-            local pos2 = Camera:WorldToViewportPoint(p2.Position)
-            if pos1.Z > 0 and pos2.Z > 0 then
-                d.line.From = Vector2.new(pos1.X,pos1.Y)
-                d.line.To = Vector2.new(pos2.X,pos2.Y)
+            local pos1, vis1 = Camera:WorldToViewportPoint(p1.Position)
+            local pos2, vis2 = Camera:WorldToViewportPoint(p2.Position)
+            if vis1 and vis2 then
+                d.line.From = Vector2.new(pos1.X, pos1.Y)
+                d.line.To = Vector2.new(pos2.X, pos2.Y)
                 d.line.Color = color
                 d.line.Visible = true
             else
                 d.line.Visible = false
             end
         else
-            d.line.Visible = false
+            -- part missing -> cleanup
+            removeSkeleton(player)
+            return
         end
     end
 end
@@ -129,20 +149,18 @@ local function onPlayerAdded(player)
         task.wait(0.1)
         createSkeleton(player)
     end)
-    if player.Character then createSkeleton(player) end
+
+    if player.Character then
+        createSkeleton(player)
+    end
 end
 
 for _, player in ipairs(Players:GetPlayers()) do
     onPlayerAdded(player)
 end
+
 Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(function(player)
-    local lines = skeletons[player]
-    if lines then
-        returnLines(lines)
-        skeletons[player] = nil
-    end
-end)
+Players.PlayerRemoving:Connect(removeSkeleton)
 
 -- Keybinds
 UserInputService.InputBegan:Connect(function(input, gpe)
@@ -159,7 +177,7 @@ end)
 
 -- Render loop
 RunService.RenderStepped:Connect(function()
-    for player, _ in pairs(skeletons) do
+    for player in pairs(skeletons) do
         updateSkeleton(player)
     end
 end)
