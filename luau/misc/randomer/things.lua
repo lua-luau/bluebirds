@@ -8,7 +8,6 @@ local Config = {
     ShowName = true,
     ShowDistance = true,
     ShowHealthBar = true,
-    ShowChams = true,
     ShowBox = false,
     ShowTracers = false,
     ShowWeapon = false,
@@ -19,22 +18,19 @@ local Config = {
     DistanceCheck = false,
     MaxDistance = 500,
     SkeletonColor = Color3.fromRGB(0, 255, 255),
-    ChamsColor = Color3.fromRGB(255, 0, 255),
     BoxColor = Color3.fromRGB(255, 255, 255),
     TracerColor = Color3.fromRGB(255, 255, 0),
     SkeletonThickness = 2,
     BoxThickness = 2,
     TracerThickness = 2,
     TextSize = 14,
-    ChamsTransparency = 0.5,
+    MinTextSize = 8,
+    MaxTextSize = 20,
     TracerOrigin = "Bottom",
 }
 
 local ESPData = {}
-local DrawingPools = {
-    Lines = {},
-    Texts = {},
-}
+local DrawingPools = {Lines = {}, Texts = {}}
 local Connections = {}
 local IsRunning = true
 
@@ -42,7 +38,7 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
     Name = "🎯 Advanced ESP Hub",
     LoadingTitle = "ESP Script v2.0",
-    LoadingSubtitle = "by ChatGPT",
+    LoadingSubtitle = "Optimized Edition",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "AdvancedESP",
@@ -68,12 +64,6 @@ VisualsTab:CreateToggle({
     Name = "Box ESP",
     CurrentValue = Config.ShowBox,
     Callback = function(v) Config.ShowBox = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Chams (Highlight)",
-    CurrentValue = Config.ShowChams,
-    Callback = function(v) Config.ShowChams = v end,
 })
 
 VisualsTab:CreateToggle({
@@ -119,7 +109,6 @@ local FilterSection = FiltersTab:CreateSection("Target Filters")
 FiltersTab:CreateToggle({
     Name = "Team Check",
     CurrentValue = Config.TeamCheck,
-    Flag = "TeamCheck",
     Callback = function(v) Config.TeamCheck = v end,
 })
 
@@ -146,19 +135,27 @@ FiltersTab:CreateSlider({
 local AppearanceSection = SettingsTab:CreateSection("Appearance Settings")
 
 SettingsTab:CreateSlider({
-    Name = "Text Size",
-    Range = {8, 28},
+    Name = "Base Text Size",
+    Range = {10, 24},
     Increment = 1,
     CurrentValue = Config.TextSize,
-    Callback = function(v)
-        Config.TextSize = v
-        for _, data in pairs(ESPData) do
-            data.NameText.Size = v
-            data.DistanceText.Size = v
-            data.HealthText.Size = v
-            data.WeaponText.Size = v
-        end
-    end,
+    Callback = function(v) Config.TextSize = v end,
+})
+
+SettingsTab:CreateSlider({
+    Name = "Min Text Size (Far)",
+    Range = {6, 14},
+    Increment = 1,
+    CurrentValue = Config.MinTextSize,
+    Callback = function(v) Config.MinTextSize = v end,
+})
+
+SettingsTab:CreateSlider({
+    Name = "Max Text Size (Close)",
+    Range = {14, 28},
+    Increment = 1,
+    CurrentValue = Config.MaxTextSize,
+    Callback = function(v) Config.MaxTextSize = v end,
 })
 
 SettingsTab:CreateSlider({
@@ -166,14 +163,7 @@ SettingsTab:CreateSlider({
     Range = {1, 6},
     Increment = 1,
     CurrentValue = Config.SkeletonThickness,
-    Callback = function(v)
-        Config.SkeletonThickness = v
-        for _, data in pairs(ESPData) do
-            for _, lineData in ipairs(data.Skeleton) do
-                lineData.Line.Thickness = v
-            end
-        end
-    end,
+    Callback = function(v) Config.SkeletonThickness = v end,
 })
 
 SettingsTab:CreateSlider({
@@ -181,16 +171,7 @@ SettingsTab:CreateSlider({
     Range = {1, 6},
     Increment = 1,
     CurrentValue = Config.BoxThickness,
-    Callback = function(v)
-        Config.BoxThickness = v
-        for _, data in pairs(ESPData) do
-            if data.Box then
-                for _, line in ipairs(data.Box) do
-                    line.Thickness = v
-                end
-            end
-        end
-    end,
+    Callback = function(v) Config.BoxThickness = v end,
 })
 
 SettingsTab:CreateSlider({
@@ -198,31 +179,7 @@ SettingsTab:CreateSlider({
     Range = {1, 6},
     Increment = 1,
     CurrentValue = Config.TracerThickness,
-    Callback = function(v)
-        Config.TracerThickness = v
-        for _, data in pairs(ESPData) do
-            if data.Tracer then
-                data.Tracer.Thickness = v
-            end
-        end
-    end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Chams Transparency",
-    Range = {0, 1},
-    Increment = 0.05,
-    CurrentValue = Config.ChamsTransparency,
-    Callback = function(v)
-        Config.ChamsTransparency = v
-        for _, data in pairs(ESPData) do
-            if data.Chams then
-                for _, highlight in pairs(data.Chams) do
-                    highlight.FillTransparency = v
-                end
-            end
-        end
-    end,
+    Callback = function(v) Config.TracerThickness = v end,
 })
 
 SettingsTab:CreateDropdown({
@@ -253,12 +210,6 @@ ColorsTab:CreateColorPicker({
 })
 
 ColorsTab:CreateColorPicker({
-    Name = "Chams Color",
-    Color = Config.ChamsColor,
-    Callback = function(v) Config.ChamsColor = v end,
-})
-
-ColorsTab:CreateColorPicker({
     Name = "Tracer Color",
     Color = Config.TracerColor,
     Callback = function(v) Config.TracerColor = v end,
@@ -266,7 +217,7 @@ ColorsTab:CreateColorPicker({
 
 local function CreateLine()
     local line = Drawing.new("Line")
-    line.Thickness = Config.SkeletonThickness
+    line.Thickness = 1
     line.Transparency = 1
     line.Visible = false
     return line
@@ -274,7 +225,7 @@ end
 
 local function CreateText()
     local text = Drawing.new("Text")
-    text.Size = Config.TextSize
+    text.Size = 14
     text.Center = true
     text.Outline = true
     text.Font = 2
@@ -299,32 +250,6 @@ end
 local function ReturnText(text)
     text.Visible = false
     table.insert(DrawingPools.Texts, text)
-end
-
-local function CreateChams(character)
-    local chams = {}
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            local highlight = Instance.new("Highlight")
-            highlight.FillColor = Config.ChamsColor
-            highlight.OutlineColor = Color3.new(0, 0, 0)
-            highlight.FillTransparency = Config.ChamsTransparency
-            highlight.OutlineTransparency = 0
-            highlight.Adornee = part
-            highlight.Parent = part
-            table.insert(chams, highlight)
-        end
-    end
-    return chams
-end
-
-local function RemoveChams(chams)
-    if not chams then return end
-    for _, highlight in pairs(chams) do
-        if highlight and highlight.Parent then
-            highlight:Destroy()
-        end
-    end
 end
 
 local function CreateBox()
@@ -355,7 +280,7 @@ local function GetCharacterParts(character)
         HumanoidRootPart = character:FindFirstChild("HumanoidRootPart"),
     }
     
-    for _, part in pairs(parts) do
+    for k, part in pairs(parts) do
         if not part then return nil end
     end
     
@@ -410,23 +335,18 @@ local function CreateESP(player)
         DistanceText = GetText(),
         HealthText = GetText(),
         WeaponText = GetText(),
-        Chams = nil,
         Connections = {},
     }
     
     ESPData[player] = data
     
-    local character = player.Character
-    if character and Config.ShowChams then
-        data.Chams = CreateChams(character)
-    end
-    
-    table.insert(data.Connections, player.CharacterAdded:Connect(function(newCharacter)
+    table.insert(data.Connections, player.CharacterAdded:Connect(function()
         task.wait(0.5)
         RemoveESP(player)
         CreateESP(player)
     end))
     
+    local character = player.Character
     if character then
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
@@ -460,27 +380,32 @@ function RemoveESP(player)
     ReturnText(data.HealthText)
     ReturnText(data.WeaponText)
     
-    RemoveChams(data.Chams)
-    
     ESPData[player] = nil
 end
 
 local function UpdateSkeleton(player, data)
+    if not Config.ShowSkeleton then
+        for _, lineData in ipairs(data.Skeleton) do
+            lineData.Line.Visible = false
+        end
+        return
+    end
+    
     local character = player.Character
     if not character then return end
     
     local parts = GetCharacterParts(character)
     if not parts then return end
     
-    local skeletonPairs = {
-        {parts.Head, parts.UpperTorso},
-        {parts.UpperTorso, parts.LeftUpperArm},
-        {parts.UpperTorso, parts.RightUpperArm},
-        {parts.UpperTorso, parts.LeftUpperLeg},
-        {parts.UpperTorso, parts.RightUpperLeg},
-    }
-    
     if #data.Skeleton == 0 then
+        local skeletonPairs = {
+            {parts.Head, parts.UpperTorso},
+            {parts.UpperTorso, parts.LeftUpperArm},
+            {parts.UpperTorso, parts.RightUpperArm},
+            {parts.UpperTorso, parts.LeftUpperLeg},
+            {parts.UpperTorso, parts.RightUpperLeg},
+        }
+        
         for _, pair in ipairs(skeletonPairs) do
             table.insert(data.Skeleton, {
                 Part1 = pair[1],
@@ -503,7 +428,7 @@ local function UpdateSkeleton(player, data)
         local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
         local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
         
-        if onScreen1 and onScreen2 and Config.ShowSkeleton then
+        if onScreen1 and onScreen2 then
             lineData.Line.From = Vector2.new(pos1.X, pos1.Y)
             lineData.Line.To = Vector2.new(pos2.X, pos2.Y)
             lineData.Line.Color = color
@@ -516,8 +441,7 @@ local function UpdateSkeleton(player, data)
 end
 
 local function UpdateBox(player, data)
-    local character = player.Character
-    if not character then
+    if not Config.ShowBox then
         if data.Box then
             for _, line in ipairs(data.Box) do
                 line.Visible = false
@@ -526,7 +450,8 @@ local function UpdateBox(player, data)
         return
     end
     
-    if not Config.ShowBox then
+    local character = player.Character
+    if not character then
         if data.Box then
             for _, line in ipairs(data.Box) do
                 line.Visible = false
@@ -539,27 +464,37 @@ local function UpdateBox(player, data)
         data.Box = CreateBox()
     end
     
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
+    local parts = GetCharacterParts(character)
+    if not parts then
         for _, line in ipairs(data.Box) do
             line.Visible = false
         end
         return
     end
     
-    local size = character:GetExtentsSize()
+    local head = parts.Head
+    local torso = parts.UpperTorso
+    local leftLeg = parts.LeftUpperLeg
+    local rightLeg = parts.RightUpperLeg
+    
+    local topY = head.Position.Y + (head.Size.Y / 2)
+    local bottomY = math.min(leftLeg.Position.Y - (leftLeg.Size.Y / 2), rightLeg.Position.Y - (rightLeg.Size.Y / 2))
+    local centerX = torso.Position.X
+    local centerZ = torso.Position.Z
+    local width = torso.Size.X * 1.5
+    
     local corners = {
-        hrp.CFrame * CFrame.new(-size.X/2, size.Y/2, 0),
-        hrp.CFrame * CFrame.new(size.X/2, size.Y/2, 0),
-        hrp.CFrame * CFrame.new(size.X/2, -size.Y/2, 0),
-        hrp.CFrame * CFrame.new(-size.X/2, -size.Y/2, 0),
+        Vector3.new(centerX - width/2, topY, centerZ),
+        Vector3.new(centerX + width/2, topY, centerZ),
+        Vector3.new(centerX + width/2, bottomY, centerZ),
+        Vector3.new(centerX - width/2, bottomY, centerZ),
     }
     
     local screenCorners = {}
     local allVisible = true
     
     for _, corner in ipairs(corners) do
-        local pos, visible = Camera:WorldToViewportPoint(corner.Position)
+        local pos, visible = Camera:WorldToViewportPoint(corner)
         table.insert(screenCorners, Vector2.new(pos.X, pos.Y))
         if not visible then allVisible = false end
     end
@@ -582,13 +517,13 @@ local function UpdateBox(player, data)
 end
 
 local function UpdateTracer(player, data)
-    local character = player.Character
-    if not character then
+    if not Config.ShowTracers then
         if data.Tracer then data.Tracer.Visible = false end
         return
     end
     
-    if not Config.ShowTracers then
+    local character = player.Character
+    if not character then
         if data.Tracer then data.Tracer.Visible = false end
         return
     end
@@ -627,13 +562,13 @@ local function UpdateTracer(player, data)
 end
 
 local function UpdateViewAngle(player, data)
-    local character = player.Character
-    if not character then
+    if not Config.ShowViewAngle then
         if data.ViewAngle then data.ViewAngle.Visible = false end
         return
     end
     
-    if not Config.ShowViewAngle then
+    local character = player.Character
+    if not character then
         if data.ViewAngle then data.ViewAngle.Visible = false end
         return
     end
@@ -686,7 +621,9 @@ local function UpdateText(player, data)
         return
     end
     
-    local headPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+    local distance = (head.Position - Camera.CFrame.Position).Magnitude
+    local headTop = head.Position + Vector3.new(0, head.Size.Y / 2, 0)
+    local headPos, onScreen = Camera:WorldToViewportPoint(headTop)
     
     if not onScreen then
         data.NameText.Visible = false
@@ -696,27 +633,29 @@ local function UpdateText(player, data)
         return
     end
     
-    local yOffset = -40
+    local scaleFactor = math.clamp(1 - (distance / Config.MaxDistance), 0.3, 1)
+    local dynamicTextSize = math.floor(Config.MinTextSize + (Config.MaxTextSize - Config.MinTextSize) * scaleFactor)
+    
+    local yOffset = 5
     
     if Config.ShowName then
         data.NameText.Text = player.Name
-        data.NameText.Position = Vector2.new(headPos.X, headPos.Y + yOffset)
+        data.NameText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
         data.NameText.Color = player.TeamColor.Color
-        data.NameText.Size = Config.TextSize
+        data.NameText.Size = dynamicTextSize
         data.NameText.Visible = true
-        yOffset = yOffset + 18
+        yOffset = yOffset + dynamicTextSize + 2
     else
         data.NameText.Visible = false
     end
     
     if Config.ShowDistance then
-        local distance = (head.Position - Camera.CFrame.Position).Magnitude
-        data.DistanceText.Text = string.format("[%d studs]", math.floor(distance))
-        data.DistanceText.Position = Vector2.new(headPos.X, headPos.Y + yOffset)
+        data.DistanceText.Text = string.format("[%d]", math.floor(distance))
+        data.DistanceText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
         data.DistanceText.Color = Color3.new(0.8, 0.8, 0.8)
-        data.DistanceText.Size = Config.TextSize
+        data.DistanceText.Size = dynamicTextSize
         data.DistanceText.Visible = true
-        yOffset = yOffset + 18
+        yOffset = yOffset + dynamicTextSize + 2
     else
         data.DistanceText.Visible = false
     end
@@ -729,77 +668,28 @@ local function UpdateText(player, data)
             0
         )
         data.HealthText.Text = string.format("HP: %d%%", healthPercent)
-        data.HealthText.Position = Vector2.new(headPos.X, headPos.Y + yOffset)
+        data.HealthText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
         data.HealthText.Color = healthColor
-        data.HealthText.Size = Config.TextSize
+        data.HealthText.Size = dynamicTextSize
         data.HealthText.Visible = true
-        yOffset = yOffset + 18
+        yOffset = yOffset + dynamicTextSize + 2
     else
         data.HealthText.Visible = false
     end
     
     if Config.ShowWeapon then
         local weapon = GetEquippedTool(character)
-        data.WeaponText.Text = "🔫 " .. weapon
-        data.WeaponText.Position = Vector2.new(headPos.X, headPos.Y + yOffset)
+        data.WeaponText.Text = weapon
+        data.WeaponText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
         data.WeaponText.Color = Color3.fromRGB(255, 200, 0)
-        data.WeaponText.Size = Config.TextSize
-        data.WeaponText.Visible = true
-    else
+        data.WeaponText.Size = dynamicTextSize
         data.WeaponText.Visible = false
-    end
-end
-
-local function UpdateChams(player, data)
-    if Config.ShowChams then
-        if not data.Chams and player.Character then
-            data.Chams = CreateChams(player.Character)
-        end
-        if data.Chams then
-            local color = Config.Rainbow and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Config.ChamsColor
-            for _, highlight in pairs(data.Chams) do
-                if highlight and highlight.Parent then
-                    highlight.FillColor = color
-                    highlight.FillTransparency = Config.ChamsTransparency
-                end
-            end
-        end
-    else
-        if data.Chams then
-            RemoveChams(data.Chams)
-            data.Chams = nil
-        end
-    end
-end
-
-local function UpdateESP()
-    for player, data in pairs(ESPData) do
-        if not IsValidTarget(player) then
-            for _, lineData in ipairs(data.Skeleton) do
-                lineData.Line.Visible = false
-            end
-            if data.Box then
-                for _, line in ipairs(data.Box) do
-                    line.Visible = false
-                end
-            end
-            if data.Tracer then data.Tracer.Visible = false end
-            if data.ViewAngle then data.ViewAngle.Visible = false end
-            data.NameText.Visible = false
-            data.DistanceText.Visible = false
-            data.HealthText.Visible = false
-            data.WeaponText.Visible = false
-            if data.Chams then
-                RemoveChams(data.Chams)
-                data.Chams = nil
-            end
         else
             UpdateSkeleton(player, data)
             UpdateBox(player, data)
             UpdateTracer(player, data)
             UpdateViewAngle(player, data)
             UpdateText(player, data)
-            UpdateChams(player, data)
         end
     end
 end
@@ -879,5 +769,3 @@ MiscTab:CreateButton({
         })
     end
 })
-
-print("Advanced ESP Script v2.0 Loaded Successfully")
