@@ -466,8 +466,10 @@ local function UpdateBox(player, data)
     
     local parts = GetCharacterParts(character)
     if not parts then
-        for _, line in ipairs(data.Box) do
-            line.Visible = false
+        if data.Box then
+            for _, line in ipairs(data.Box) do
+                line.Visible = false
+            end
         end
         return
     end
@@ -683,7 +685,36 @@ local function UpdateText(player, data)
         data.WeaponText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
         data.WeaponText.Color = Color3.fromRGB(255, 200, 0)
         data.WeaponText.Size = dynamicTextSize
+        data.WeaponText.Visible = true
+    else
         data.WeaponText.Visible = false
+    end
+end
+
+local lastUpdate = 0
+local updateInterval = 1/60
+
+local function UpdateESP()
+    local now = tick()
+    if now - lastUpdate < updateInterval then return end
+    lastUpdate = now
+    
+    for player, data in pairs(ESPData) do
+        if not IsValidTarget(player) then
+            for _, lineData in ipairs(data.Skeleton) do
+                lineData.Line.Visible = false
+            end
+            if data.Box then
+                for _, line in ipairs(data.Box) do
+                    line.Visible = false
+                end
+            end
+            if data.Tracer then data.Tracer.Visible = false end
+            if data.ViewAngle then data.ViewAngle.Visible = false end
+            data.NameText.Visible = false
+            data.DistanceText.Visible = false
+            data.HealthText.Visible = false
+            data.WeaponText.Visible = false
         else
             UpdateSkeleton(player, data)
             UpdateBox(player, data)
