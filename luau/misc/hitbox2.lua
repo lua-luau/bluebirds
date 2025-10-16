@@ -27,9 +27,6 @@ getgenv().Config = {
     InfiniteJump = false,
 }
 
---// Store original hitbox data to prevent vehicle freezing
-local OriginalHitboxData = {}
-
 --// Rayfield UI Library
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -103,21 +100,6 @@ HomeTab:CreateToggle({
     Flag = "HitboxToggle",
     Callback = function(s)
         Config.HitboxStatus = s
-        if not s then
-            -- Restore original hitboxes when disabled
-            for plr, data in pairs(OriginalHitboxData) do
-                if plr.Character then
-                    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        hrp.Size = data.Size
-                        hrp.Transparency = data.Transparency
-                        hrp.BrickColor = data.BrickColor
-                        hrp.Material = data.Material
-                        hrp.CanCollide = data.CanCollide
-                    end
-                end
-            end
-        end
     end,
 })
 
@@ -270,7 +252,7 @@ PlayerTab:CreateButton({
     end,
 })
 
---// Hitbox Logic (Fixed to prevent vehicle freezing)
+--// Hitbox Logic (Fixed)
 local function updateHitbox()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
@@ -278,50 +260,23 @@ local function updateHitbox()
             local hum = plr.Character:FindFirstChildOfClass("Humanoid")
             
             if hrp then
-                -- Store original data if not already stored
-                if not OriginalHitboxData[plr] then
-                    OriginalHitboxData[plr] = {
-                        Size = hrp.Size,
-                        Transparency = hrp.Transparency,
-                        BrickColor = hrp.BrickColor,
-                        Material = hrp.Material,
-                        CanCollide = hrp.CanCollide
-                    }
-                end
-                
-                -- Check if player is in a vehicle (humanoid sit state)
+                -- Check if player is in a vehicle
                 local isInVehicle = hum and hum.Sit
                 
                 local isEnemy = not Config.TeamCheck or plr.Team ~= LocalPlayer.Team
                 local isAlive = not Config.SanityCheck or (hum and hum.Health > 0)
                 
-                -- Only modify hitbox if NOT in vehicle and conditions are met
+                -- Apply hitbox expansion only when conditions are met
                 if Config.HitboxStatus and isEnemy and isAlive and not isInVehicle then
                     hrp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
                     hrp.Transparency = Config.HitboxTransparency
                     hrp.BrickColor = BrickColor.new("Really black")
                     hrp.Material = Enum.Material.Neon
                     hrp.CanCollide = false
-                    hrp.Massless = true -- Prevent physics issues
-                else
-                    -- Restore original properties
-                    local orig = OriginalHitboxData[plr]
-                    if orig then
-                        hrp.Size = orig.Size
-                        hrp.Transparency = orig.Transparency
-                        hrp.BrickColor = orig.BrickColor
-                        hrp.Material = orig.Material
-                        hrp.CanCollide = orig.CanCollide
-                    end
                 end
             end
         end
     end
 end
-
--- Clean up stored data when player leaves
-Players.PlayerRemoving:Connect(function(plr)
-    OriginalHitboxData[plr] = nil
-end)
 
 RunService.RenderStepped:Connect(updateHitbox)
