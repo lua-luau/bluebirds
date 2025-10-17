@@ -31,14 +31,14 @@ getgenv().Config = {
     ESPEnabled = false,
     ShowName = true,
     ShowDistance = true,
-    ShowHealthBar = true,
     ShowHealthText = true,
+    HealthColorBased = true,
+    UseTeamColor = false,
+    ESPTeamCheck = false,
     ESPColor = Color3.fromRGB(255, 255, 255),
-    HealthBarColor = Color3.fromRGB(0, 255, 0),
     TextSize = 16,
     XOffset = 0,
     YOffset = 0,
-    DepthPerception = true,
     MaxDistance = 1000,
 }
 
@@ -285,8 +285,6 @@ ESPTab:CreateToggle({
                 if esp.NameText then esp.NameText:Remove() end
                 if esp.DistanceText then esp.DistanceText:Remove() end
                 if esp.HealthText then esp.HealthText:Remove() end
-                if esp.HealthBarOutline then esp.HealthBarOutline:Remove() end
-                if esp.HealthBarFill then esp.HealthBarFill:Remove() end
             end
             ESPObjects = {}
         end
@@ -312,15 +310,6 @@ ESPTab:CreateToggle({
 })
 
 ESPTab:CreateToggle({
-    Name = "Show Health Bar",
-    CurrentValue = true,
-    Flag = "ShowHealthBar",
-    Callback = function(s)
-        Config.ShowHealthBar = s
-    end,
-})
-
-ESPTab:CreateToggle({
     Name = "Show Health Text",
     CurrentValue = true,
     Flag = "ShowHealthText",
@@ -330,11 +319,29 @@ ESPTab:CreateToggle({
 })
 
 ESPTab:CreateToggle({
-    Name = "Depth Perception (Size Based on Distance)",
+    Name = "Health Color Based (Green to Red)",
     CurrentValue = true,
-    Flag = "DepthPerception",
+    Flag = "HealthColorBased",
     Callback = function(s)
-        Config.DepthPerception = s
+        Config.HealthColorBased = s
+    end,
+})
+
+ESPTab:CreateToggle({
+    Name = "Use Team Colors",
+    CurrentValue = false,
+    Flag = "UseTeamColor",
+    Callback = function(s)
+        Config.UseTeamColor = s
+    end,
+})
+
+ESPTab:CreateToggle({
+    Name = "ESP Team Check (Hide Teammates)",
+    CurrentValue = false,
+    Flag = "ESPTeamCheck",
+    Callback = function(s)
+        Config.ESPTeamCheck = s
     end,
 })
 
@@ -393,15 +400,6 @@ ESPTab:CreateColorPicker({
     end
 })
 
-ESPTab:CreateColorPicker({
-    Name = "Health Bar Color",
-    Color = Color3.fromRGB(0, 255, 0),
-    Flag = "HealthBarColor",
-    Callback = function(c)
-        Config.HealthBarColor = c
-    end
-})
-
 --// ESP Functions
 local function createESP(player)
     if ESPObjects[player] then return end
@@ -409,9 +407,7 @@ local function createESP(player)
     local esp = {
         NameText = Drawing.new("Text"),
         DistanceText = Drawing.new("Text"),
-        HealthText = Drawing.new("Text"),
-        HealthBarOutline = Drawing.new("Square"),
-        HealthBarFill = Drawing.new("Square")
+        HealthText = Drawing.new("Text")
     }
     
     -- Name Text
@@ -429,14 +425,6 @@ local function createESP(player)
     esp.HealthText.Outline = true
     esp.HealthText.Font = 2
     
-    -- Health Bar Outline
-    esp.HealthBarOutline.Thickness = 1
-    esp.HealthBarOutline.Filled = false
-    esp.HealthBarOutline.Color = Color3.fromRGB(0, 0, 0)
-    
-    -- Health Bar Fill
-    esp.HealthBarFill.Filled = true
-    
     ESPObjects[player] = esp
 end
 
@@ -446,9 +434,21 @@ local function removeESP(player)
         if esp.NameText then esp.NameText:Remove() end
         if esp.DistanceText then esp.DistanceText:Remove() end
         if esp.HealthText then esp.HealthText:Remove() end
-        if esp.HealthBarOutline then esp.HealthBarOutline:Remove() end
-        if esp.HealthBarFill then esp.HealthBarFill:Remove() end
         ESPObjects[player] = nil
+    end
+end
+
+local function getHealthColor(healthPercent)
+    if healthPercent > 0.75 then
+        return Color3.fromRGB(0, 255, 0) -- Green
+    elseif healthPercent > 0.5 then
+        return Color3.fromRGB(173, 255, 47) -- Yellow-Green
+    elseif healthPercent > 0.25 then
+        return Color3.fromRGB(255, 255, 0) -- Yellow
+    elseif healthPercent > 0.1 then
+        return Color3.fromRGB(255, 165, 0) -- Orange
+    else
+        return Color3.fromRGB(255, 0, 0) -- Red
     end
 end
 
@@ -456,108 +456,145 @@ local function updateESP()
     if not Config.ESPEnabled then return end
     
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
+        if player ~= LocalPlayer then
+            -- Create ESP if player exists and doesn't have ESP yet
+            if not ESPObjects[player] then
+                createESP(player)
+            end
+            
+            local esp = ESPObjects[player]
+            if not esp then continue end
+            
+            -- Check if player has character
+            if not player.Character then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
             local char = player.Character
             local hrp = char:FindFirstChild("HumanoidRootPart")
             local head = char:FindFirstChild("Head")
             local hum = char:FindFirstChildOfClass("Humanoid")
             
-            if hrp and head and hum then
-                -- Check distance
-                local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and 
-                    (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude) or math.huge
-                
-                if distance <= Config.MaxDistance then
-                    if not ESPObjects[player] then
-                        createESP(player)
-                    end
-                    
-                    local esp = ESPObjects[player]
-                    local headPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                    
-                    if onScreen then
-                        -- Calculate depth perception size
-                        local sizeMult = 1
-                        if Config.DepthPerception then
-                            sizeMult = math.clamp(1000 / distance, 0.5, 2)
-                        end
-                        
-                        local textSize = Config.TextSize * sizeMult
-                        local baseX = headPos.X + Config.XOffset
-                        local baseY = headPos.Y + Config.YOffset
-                        
-                        -- Update Name
-                        if Config.ShowName and esp.NameText then
-                            esp.NameText.Visible = true
-                            esp.NameText.Text = player.Name
-                            esp.NameText.Size = textSize
-                            esp.NameText.Position = Vector2.new(baseX, baseY - 40 * sizeMult)
-                            esp.NameText.Color = Config.ESPColor
-                        else
-                            esp.NameText.Visible = false
-                        end
-                        
-                        -- Update Distance
-                        if Config.ShowDistance and esp.DistanceText then
-                            esp.DistanceText.Visible = true
-                            esp.DistanceText.Text = string.format("[%d studs]", math.floor(distance))
-                            esp.DistanceText.Size = textSize * 0.8
-                            esp.DistanceText.Position = Vector2.new(baseX, baseY - 25 * sizeMult)
-                            esp.DistanceText.Color = Config.ESPColor
-                        else
-                            esp.DistanceText.Visible = false
-                        end
-                        
-                        -- Update Health Text
-                        if Config.ShowHealthText and esp.HealthText then
-                            esp.HealthText.Visible = true
-                            esp.HealthText.Text = string.format("%d/%d HP", math.floor(hum.Health), math.floor(hum.MaxHealth))
-                            esp.HealthText.Size = textSize * 0.8
-                            esp.HealthText.Position = Vector2.new(baseX, baseY - 10 * sizeMult)
-                            esp.HealthText.Color = Config.ESPColor
-                        else
-                            esp.HealthText.Visible = false
-                        end
-                        
-                        -- Update Health Bar
-                        if Config.ShowHealthBar and esp.HealthBarOutline and esp.HealthBarFill then
-                            local barWidth = 50 * sizeMult
-                            local barHeight = 6 * sizeMult
-                            local barX = baseX - barWidth / 2
-                            local barY = baseY + 5 * sizeMult
-                            
-                            esp.HealthBarOutline.Visible = true
-                            esp.HealthBarOutline.Size = Vector2.new(barWidth, barHeight)
-                            esp.HealthBarOutline.Position = Vector2.new(barX, barY)
-                            
-                            local healthPercent = hum.Health / hum.MaxHealth
-                            esp.HealthBarFill.Visible = true
-                            esp.HealthBarFill.Size = Vector2.new(barWidth * healthPercent - 2, barHeight - 2)
-                            esp.HealthBarFill.Position = Vector2.new(barX + 1, barY + 1)
-                            esp.HealthBarFill.Color = Config.HealthBarColor:Lerp(Color3.fromRGB(255, 0, 0), 1 - healthPercent)
-                        else
-                            esp.HealthBarOutline.Visible = false
-                            esp.HealthBarFill.Visible = false
-                        end
-                    else
-                        -- Hide if not on screen
-                        esp.NameText.Visible = false
-                        esp.DistanceText.Visible = false
-                        esp.HealthText.Visible = false
-                        esp.HealthBarOutline.Visible = false
-                        esp.HealthBarFill.Visible = false
-                    end
-                else
-                    removeESP(player)
-                end
+            -- Check if all parts exist
+            if not hrp or not head or not hum then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            -- Check if humanoid is alive
+            if hum.Health <= 0 then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            -- Team check - skip if on same team
+            if Config.ESPTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            -- Check distance
+            local myChar = LocalPlayer.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            
+            if not myHRP then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            local distance = (myHRP.Position - hrp.Position).Magnitude
+            
+            if distance > Config.MaxDistance then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            -- Convert to screen position
+            local headPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+            
+            if not onScreen then
+                esp.NameText.Visible = false
+                esp.DistanceText.Visible = false
+                esp.HealthText.Visible = false
+                continue
+            end
+            
+            -- Determine text color
+            local textColor = Config.ESPColor
+            if Config.UseTeamColor and player.Team then
+                textColor = player.TeamColor.Color
+            end
+            
+            local baseX = headPos.X + Config.XOffset
+            local baseY = headPos.Y + Config.YOffset
+            
+            -- Update Name
+            if Config.ShowName and esp.NameText then
+                esp.NameText.Visible = true
+                esp.NameText.Text = player.Name
+                esp.NameText.Size = Config.TextSize
+                esp.NameText.Position = Vector2.new(baseX, baseY - 40)
+                esp.NameText.Color = textColor
             else
-                removeESP(player)
+                esp.NameText.Visible = false
+            end
+            
+            -- Update Distance
+            if Config.ShowDistance and esp.DistanceText then
+                esp.DistanceText.Visible = true
+                esp.DistanceText.Text = string.format("[%d studs]", math.floor(distance))
+                esp.DistanceText.Size = Config.TextSize
+                esp.DistanceText.Position = Vector2.new(baseX, baseY - 25)
+                esp.DistanceText.Color = textColor
+            else
+                esp.DistanceText.Visible = false
+            end
+            
+            -- Update Health Text
+            if Config.ShowHealthText and esp.HealthText then
+                local healthPercent = hum.Health / hum.MaxHealth
+                local healthColor = textColor
+                
+                if Config.HealthColorBased then
+                    healthColor = getHealthColor(healthPercent)
+                end
+                
+                esp.HealthText.Visible = true
+                esp.HealthText.Text = string.format("%d/%d HP", math.floor(hum.Health), math.floor(hum.MaxHealth))
+                esp.HealthText.Size = Config.TextSize
+                esp.HealthText.Position = Vector2.new(baseX, baseY - 10)
+                esp.HealthText.Color = healthColor
+            else
+                esp.HealthText.Visible = false
             end
         end
     end
 end
 
-Players.PlayerRemoving:Connect(removeESP)
+-- Handle player leaving
+Players.PlayerRemoving:Connect(function(player)
+    removeESP(player)
+end)
+
+-- Handle new players
+Players.PlayerAdded:Connect(function(player)
+    if Config.ESPEnabled then
+        createESP(player)
+    end
+end)
 
 --// Hitbox Logic
 local function updateHitbox()
