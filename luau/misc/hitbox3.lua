@@ -35,11 +35,17 @@ getgenv().Config = {
     HealthColorBased = true,
     UseTeamColor = false,
     ESPTeamCheck = false,
+    DepthPerception = true,
+    DepthMinSize = 0.4,
+    DepthMaxSize = 1.5,
+    DepthCloseRange = 100,
+    DepthMediumRange = 500,
+    DepthLongRange = 2000,
     ESPColor = Color3.fromRGB(255, 255, 255),
     TextSize = 16,
     XOffset = 0,
     YOffset = 0,
-    MaxDistance = 1000,
+    MaxDistance = 5000,
 }
 
 --// ESP Storage
@@ -345,6 +351,66 @@ ESPTab:CreateToggle({
     end,
 })
 
+ESPTab:CreateToggle({
+    Name = "Depth Perception",
+    CurrentValue = true,
+    Flag = "DepthPerception",
+    Callback = function(s)
+        Config.DepthPerception = s
+    end,
+})
+
+local DepthSection = ESPTab:CreateSection("Depth Perception Settings")
+
+ESPTab:CreateSlider({
+    Name = "Min Size Multiplier (Far)",
+    Range = {0.1, 1},
+    Increment = 0.05,
+    CurrentValue = 0.4,
+    Flag = "DepthMinSize",
+    Callback = function(v)
+        Config.DepthMinSize = v
+    end,
+})
+
+ESPTab:CreateSlider({
+    Name = "Max Size Multiplier (Close)",
+    Range = {1, 3},
+    Increment = 0.1,
+    CurrentValue = 1.5,
+    Flag = "DepthMaxSize",
+    Callback = function(v)
+        Config.DepthMaxSize = v
+    end,
+})
+
+ESPTab:CreateInput({
+    Name = "Close Range Distance (studs)",
+    PlaceholderText = "100",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(v)
+        Config.DepthCloseRange = tonumber(v) or 100
+    end,
+})
+
+ESPTab:CreateInput({
+    Name = "Medium Range Distance (studs)",
+    PlaceholderText = "500",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(v)
+        Config.DepthMediumRange = tonumber(v) or 500
+    end,
+})
+
+ESPTab:CreateInput({
+    Name = "Long Range Distance (studs)",
+    PlaceholderText = "2000",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(v)
+        Config.DepthLongRange = tonumber(v) or 2000
+    end,
+})
+
 local CustomizationSection = ESPTab:CreateSection("Customization")
 
 ESPTab:CreateSlider({
@@ -382,9 +448,9 @@ ESPTab:CreateSlider({
 
 ESPTab:CreateSlider({
     Name = "Max Distance",
-    Range = {100, 5000},
+    Range = {100, 10000},
     Increment = 100,
-    CurrentValue = 1000,
+    CurrentValue = 5000,
     Flag = "MaxDistance",
     Callback = function(v)
         Config.MaxDistance = v
@@ -538,6 +604,34 @@ local function updateESP()
                 textColor = player.TeamColor.Color
             end
             
+            -- Calculate depth perception scaling
+            local sizeMult = 1
+            local spacing = 15
+            
+            if Config.DepthPerception then
+                -- Customizable depth perception with user-defined ranges
+                if distance < Config.DepthCloseRange then
+                    -- Very close: larger text based on max size setting
+                    sizeMult = Config.DepthMaxSize
+                    spacing = 20
+                elseif distance < Config.DepthMediumRange then
+                    -- Close to medium range: gradually transition from max to normal
+                    local progress = (distance - Config.DepthCloseRange) / (Config.DepthMediumRange - Config.DepthCloseRange)
+                    sizeMult = Config.DepthMaxSize - (progress * (Config.DepthMaxSize - 1))
+                    spacing = 20 - (progress * 5)
+                elseif distance < Config.DepthLongRange then
+                    -- Medium range: normal size
+                    sizeMult = 1
+                    spacing = 15
+                else
+                    -- Long range: scale down gradually using logarithmic curve
+                    local logScale = math.log(distance / Config.DepthLongRange) / math.log(5)
+                    sizeMult = math.max(Config.DepthMinSize, 1 - (logScale * (1 - Config.DepthMinSize)))
+                    spacing = math.max(8, 15 - (logScale * 7))
+                end
+            end
+            
+            local textSize = Config.TextSize * sizeMult
             local baseX = headPos.X + Config.XOffset
             local baseY = headPos.Y + Config.YOffset
             
@@ -545,8 +639,8 @@ local function updateESP()
             if Config.ShowName and esp.NameText then
                 esp.NameText.Visible = true
                 esp.NameText.Text = player.Name
-                esp.NameText.Size = Config.TextSize
-                esp.NameText.Position = Vector2.new(baseX, baseY - 40)
+                esp.NameText.Size = textSize
+                esp.NameText.Position = Vector2.new(baseX, baseY - spacing * 2)
                 esp.NameText.Color = textColor
             else
                 esp.NameText.Visible = false
@@ -556,8 +650,8 @@ local function updateESP()
             if Config.ShowDistance and esp.DistanceText then
                 esp.DistanceText.Visible = true
                 esp.DistanceText.Text = string.format("[%d studs]", math.floor(distance))
-                esp.DistanceText.Size = Config.TextSize
-                esp.DistanceText.Position = Vector2.new(baseX, baseY - 25)
+                esp.DistanceText.Size = textSize * 0.9
+                esp.DistanceText.Position = Vector2.new(baseX, baseY - spacing)
                 esp.DistanceText.Color = textColor
             else
                 esp.DistanceText.Visible = false
@@ -574,8 +668,8 @@ local function updateESP()
                 
                 esp.HealthText.Visible = true
                 esp.HealthText.Text = string.format("%d/%d HP", math.floor(hum.Health), math.floor(hum.MaxHealth))
-                esp.HealthText.Size = Config.TextSize
-                esp.HealthText.Position = Vector2.new(baseX, baseY - 10)
+                esp.HealthText.Size = textSize * 0.9
+                esp.HealthText.Position = Vector2.new(baseX, baseY)
                 esp.HealthText.Color = healthColor
             else
                 esp.HealthText.Visible = false
@@ -608,19 +702,4 @@ local function updateHitbox()
                 local isEnemy = not Config.TeamCheck or plr.Team ~= LocalPlayer.Team
                 local isAlive = not Config.SanityCheck or (hum and hum.Health > 0)
                 
-                if Config.HitboxStatus and isEnemy and isAlive and not isInVehicle then
-                    hrp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
-                    hrp.Transparency = Config.HitboxTransparency
-                    hrp.BrickColor = BrickColor.new("Really black")
-                    hrp.Material = Enum.Material.Neon
-                    hrp.CanCollide = false
-                end
-            end
-        end
-    end
-end
-
-RunService.RenderStepped:Connect(function()
-    updateHitbox()
-    updateESP()
-end)
+  
