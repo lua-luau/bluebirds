@@ -1,7 +1,8 @@
---// Simple Hitbox Expander (Rayfield)
+--// Hitbox Expander + ESP (Rayfield)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 getgenv().Config = {
     HitboxSize = 15,
@@ -15,8 +16,14 @@ getgenv().Config = {
     ExpandRightArm = false,
     ExpandLeftLeg = false,
     ExpandRightLeg = false,
+    ESPEnabled = false,
+    ESPTeamCheck = false,
+    ESPColor = Color3.fromRGB(255, 0, 0),
+    ESPSize = 8,
+    ESPMaxDistance = 5000,
 }
 
+local ESPObjects = {}
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "Hitbox Expander",
@@ -29,6 +36,7 @@ local Window = Rayfield:CreateWindow({
 
 local HomeTab = Window:CreateTab("Home", 4483362458)
 local PartsTab = Window:CreateTab("Body Parts", 4483362458)
+local ESPTab = Window:CreateTab("ESP", 4483362458)
 
 HomeTab:CreateSection("Hitbox Settings")
 
@@ -124,6 +132,58 @@ PartsTab:CreateToggle({
     end
 })
 
+ESPTab:CreateSection("ESP Settings")
+
+ESPTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Callback = function(s)
+        Config.ESPEnabled = s
+        if not s then
+            for _, esp in pairs(ESPObjects) do
+                if esp.Dot then esp.Dot:Remove() end
+            end
+            ESPObjects = {}
+        end
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "ESP Team Check (Hide Teammates)",
+    CurrentValue = false,
+    Callback = function(s)
+        Config.ESPTeamCheck = s
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "Dot Size",
+    Range = {4, 20},
+    Increment = 1,
+    CurrentValue = 8,
+    Callback = function(v)
+        Config.ESPSize = v
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "Max Distance",
+    Range = {100, 10000},
+    Increment = 100,
+    CurrentValue = 5000,
+    Callback = function(v)
+        Config.ESPMaxDistance = v
+    end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Dot Color",
+    Color = Color3.fromRGB(255, 0, 0),
+    Callback = function(c)
+        Config.ESPColor = c
+    end
+})
+
 local partMapping = {
     Head = {"Head"},
     Torso = {"Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
@@ -167,15 +227,64 @@ local function shouldExpandPart(partName)
     return false
 end
 
+local function createESP(player)
+    if ESPObjects[player] then return end
+    local esp = {Dot = Drawing.new("Circle")}
+    esp.Dot.Filled = true
+    esp.Dot.Thickness = 1
+    esp.Dot.NumSides = 12
+    esp.Dot.Radius = Config.ESPSize
+    esp.Dot.Color = Config.ESPColor
+    ESPObjects[player] = esp
+end
+
+local function removeESP(player)
+    if ESPObjects[player] then
+        local esp = ESPObjects[player]
+        if esp.Dot then esp.Dot:Remove() end
+        ESPObjects[player] = nil
+    end
+end
+
+local function updateESP()
+    if not Config.ESPEnabled then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if not ESPObjects[player] then createESP(player) end
+            local esp = ESPObjects[player]
+            if not esp then continue end
+            if not player.Character then esp.Dot.Visible = false; continue end
+            local char = player.Character
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum then esp.Dot.Visible = false; continue end
+            if hum.Health <= 0 then esp.Dot.Visible = false; continue end
+            if Config.ESPTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then esp.Dot.Visible = false; continue end
+            local myChar = LocalPlayer.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then esp.Dot.Visible = false; continue end
+            local distance = (myHRP.Position - hrp.Position).Magnitude
+            if distance > Config.ESPMaxDistance then esp.Dot.Visible = false; continue end
+            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            if not onScreen then esp.Dot.Visible = false; continue end
+            esp.Dot.Visible = true
+            esp.Dot.Position = Vector2.new(pos.X, pos.Y)
+            esp.Dot.Radius = Config.ESPSize
+            esp.Dot.Color = Config.ESPColor
+        end
+    end
+end
+
+Players.PlayerRemoving:Connect(function(player) removeESP(player) end)
+Players.PlayerAdded:Connect(function(player) if Config.ESPEnabled then createESP(player) end end)
+
 local function updateHitbox()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
             local char = plr.Character
             local hum = char:FindFirstChildOfClass("Humanoid")
-            
             local isEnemy = not Config.TeamCheck or plr.Team ~= LocalPlayer.Team
             local isAlive = not Config.SanityCheck or (hum and hum.Health > 0)
-            
             if Config.HitboxStatus and isEnemy and isAlive then
                 for _, part in pairs(char:GetChildren()) do
                     if part:IsA("BasePart") and shouldExpandPart(part.Name) then
@@ -191,4 +300,4 @@ local function updateHitbox()
     end
 end
 
-RunService.RenderStepped:Connect(updateHitbox)
+RunService.RenderStepped:Connect(function() updateHitbox(); updateESP() end)
