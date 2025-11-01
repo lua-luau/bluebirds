@@ -4,7 +4,7 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-getgenv().Config = {
+getgenv().Config = getgenv().Config or {
     HitboxSize = 15,
     HitboxTransparency = 0.9,
     HitboxStatus = false,
@@ -18,12 +18,14 @@ getgenv().Config = {
     ExpandRightLeg = false,
     ESPEnabled = false,
     ESPTeamCheck = false,
+    ESPUseTeamColor = true,
     ESPColor = Color3.fromRGB(255, 0, 0),
-    ESPSize = 8,
+    ESPSize = 3,
     ESPMaxDistance = 5000,
 }
 
-local ESPObjects = {}
+getgenv().ESPObjects = getgenv().ESPObjects or {}
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "Hitbox Expander",
@@ -42,43 +44,43 @@ HomeTab:CreateSection("Hitbox Settings")
 
 HomeTab:CreateInput({
     Name = "Hitbox Size",
-    PlaceholderText = "15",
+    PlaceholderText = tostring(getgenv().Config.HitboxSize),
     RemoveTextAfterFocusLost = false,
     Callback = function(v)
-        Config.HitboxSize = tonumber(v) or 15
+        getgenv().Config.HitboxSize = tonumber(v) or 15
     end
 })
 
 HomeTab:CreateInput({
     Name = "Hitbox Transparency",
-    PlaceholderText = "0.9",
+    PlaceholderText = tostring(getgenv().Config.HitboxTransparency),
     RemoveTextAfterFocusLost = false,
     Callback = function(v)
-        Config.HitboxTransparency = tonumber(v) or 0.9
+        getgenv().Config.HitboxTransparency = tonumber(v) or 0.9
     end
 })
 
 HomeTab:CreateToggle({
     Name = "Enable Hitbox",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.HitboxStatus,
     Callback = function(s)
-        Config.HitboxStatus = s
+        getgenv().Config.HitboxStatus = s
     end
 })
 
 HomeTab:CreateToggle({
     Name = "Team Check",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.TeamCheck,
     Callback = function(s)
-        Config.TeamCheck = s
+        getgenv().Config.TeamCheck = s
     end
 })
 
 HomeTab:CreateToggle({
     Name = "Sanity Check (Auto Remove on Death)",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.SanityCheck,
     Callback = function(s)
-        Config.SanityCheck = s
+        getgenv().Config.SanityCheck = s
     end
 })
 
@@ -86,49 +88,49 @@ PartsTab:CreateSection("Select Body Parts to Expand")
 
 PartsTab:CreateToggle({
     Name = "Head",
-    CurrentValue = true,
+    CurrentValue = getgenv().Config.ExpandHead,
     Callback = function(s)
-        Config.ExpandHead = s
+        getgenv().Config.ExpandHead = s
     end
 })
 
 PartsTab:CreateToggle({
     Name = "Torso / HumanoidRootPart",
-    CurrentValue = true,
+    CurrentValue = getgenv().Config.ExpandTorso,
     Callback = function(s)
-        Config.ExpandTorso = s
+        getgenv().Config.ExpandTorso = s
     end
 })
 
 PartsTab:CreateToggle({
     Name = "Left Arm",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ExpandLeftArm,
     Callback = function(s)
-        Config.ExpandLeftArm = s
+        getgenv().Config.ExpandLeftArm = s
     end
 })
 
 PartsTab:CreateToggle({
     Name = "Right Arm",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ExpandRightArm,
     Callback = function(s)
-        Config.ExpandRightArm = s
+        getgenv().Config.ExpandRightArm = s
     end
 })
 
 PartsTab:CreateToggle({
     Name = "Left Leg",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ExpandLeftLeg,
     Callback = function(s)
-        Config.ExpandLeftLeg = s
+        getgenv().Config.ExpandLeftLeg = s
     end
 })
 
 PartsTab:CreateToggle({
     Name = "Right Leg",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ExpandRightLeg,
     Callback = function(s)
-        Config.ExpandRightLeg = s
+        getgenv().Config.ExpandRightLeg = s
     end
 })
 
@@ -136,33 +138,41 @@ ESPTab:CreateSection("ESP Settings")
 
 ESPTab:CreateToggle({
     Name = "Enable ESP",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ESPEnabled,
     Callback = function(s)
-        Config.ESPEnabled = s
+        getgenv().Config.ESPEnabled = s
         if not s then
-            for _, esp in pairs(ESPObjects) do
+            for _, esp in pairs(getgenv().ESPObjects) do
                 if esp.Dot then esp.Dot:Remove() end
             end
-            ESPObjects = {}
+            getgenv().ESPObjects = {}
         end
     end
 })
 
 ESPTab:CreateToggle({
     Name = "ESP Team Check (Hide Teammates)",
-    CurrentValue = false,
+    CurrentValue = getgenv().Config.ESPTeamCheck,
     Callback = function(s)
-        Config.ESPTeamCheck = s
+        getgenv().Config.ESPTeamCheck = s
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Use Team Colors",
+    CurrentValue = getgenv().Config.ESPUseTeamColor,
+    Callback = function(s)
+        getgenv().Config.ESPUseTeamColor = s
     end
 })
 
 ESPTab:CreateSlider({
     Name = "Dot Size",
-    Range = {4, 20},
-    Increment = 1,
-    CurrentValue = 8,
+    Range = {1, 10},
+    Increment = 0.5,
+    CurrentValue = getgenv().Config.ESPSize,
     Callback = function(v)
-        Config.ESPSize = v
+        getgenv().Config.ESPSize = v
     end
 })
 
@@ -170,21 +180,21 @@ ESPTab:CreateSlider({
     Name = "Max Distance",
     Range = {100, 10000},
     Increment = 100,
-    CurrentValue = 5000,
+    CurrentValue = getgenv().Config.ESPMaxDistance,
     Callback = function(v)
-        Config.ESPMaxDistance = v
+        getgenv().Config.ESPMaxDistance = v
     end
 })
 
 ESPTab:CreateColorPicker({
-    Name = "Dot Color",
-    Color = Color3.fromRGB(255, 0, 0),
+    Name = "Dot Color (if not using team colors)",
+    Color = getgenv().Config.ESPColor,
     Callback = function(c)
-        Config.ESPColor = c
+        getgenv().Config.ESPColor = c
     end
 })
 
-local partMapping = {
+getgenv().partMapping = {
     Head = {"Head"},
     Torso = {"Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
     LeftArm = {"Left Arm", "LeftUpperArm", "LeftLowerArm", "LeftHand"},
@@ -194,33 +204,33 @@ local partMapping = {
 }
 
 local function shouldExpandPart(partName)
-    if Config.ExpandHead then
-        for _, name in ipairs(partMapping.Head) do
+    if getgenv().Config.ExpandHead then
+        for _, name in ipairs(getgenv().partMapping.Head) do
             if partName == name then return true end
         end
     end
-    if Config.ExpandTorso then
-        for _, name in ipairs(partMapping.Torso) do
+    if getgenv().Config.ExpandTorso then
+        for _, name in ipairs(getgenv().partMapping.Torso) do
             if partName == name then return true end
         end
     end
-    if Config.ExpandLeftArm then
-        for _, name in ipairs(partMapping.LeftArm) do
+    if getgenv().Config.ExpandLeftArm then
+        for _, name in ipairs(getgenv().partMapping.LeftArm) do
             if partName == name then return true end
         end
     end
-    if Config.ExpandRightArm then
-        for _, name in ipairs(partMapping.RightArm) do
+    if getgenv().Config.ExpandRightArm then
+        for _, name in ipairs(getgenv().partMapping.RightArm) do
             if partName == name then return true end
         end
     end
-    if Config.ExpandLeftLeg then
-        for _, name in ipairs(partMapping.LeftLeg) do
+    if getgenv().Config.ExpandLeftLeg then
+        for _, name in ipairs(getgenv().partMapping.LeftLeg) do
             if partName == name then return true end
         end
     end
-    if Config.ExpandRightLeg then
-        for _, name in ipairs(partMapping.RightLeg) do
+    if getgenv().Config.ExpandRightLeg then
+        for _, name in ipairs(getgenv().partMapping.RightLeg) do
             if partName == name then return true end
         end
     end
@@ -228,30 +238,28 @@ local function shouldExpandPart(partName)
 end
 
 local function createESP(player)
-    if ESPObjects[player] then return end
+    if getgenv().ESPObjects[player] then return end
     local esp = {Dot = Drawing.new("Circle")}
     esp.Dot.Filled = true
     esp.Dot.Thickness = 1
     esp.Dot.NumSides = 12
-    esp.Dot.Radius = Config.ESPSize
-    esp.Dot.Color = Config.ESPColor
-    ESPObjects[player] = esp
+    getgenv().ESPObjects[player] = esp
 end
 
 local function removeESP(player)
-    if ESPObjects[player] then
-        local esp = ESPObjects[player]
+    if getgenv().ESPObjects[player] then
+        local esp = getgenv().ESPObjects[player]
         if esp.Dot then esp.Dot:Remove() end
-        ESPObjects[player] = nil
+        getgenv().ESPObjects[player] = nil
     end
 end
 
 local function updateESP()
-    if not Config.ESPEnabled then return end
+    if not getgenv().Config.ESPEnabled then return end
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            if not ESPObjects[player] then createESP(player) end
-            local esp = ESPObjects[player]
+            if not getgenv().ESPObjects[player] then createESP(player) end
+            local esp = getgenv().ESPObjects[player]
             if not esp then continue end
             if not player.Character then esp.Dot.Visible = false; continue end
             local char = player.Character
@@ -259,37 +267,41 @@ local function updateESP()
             local hum = char:FindFirstChildOfClass("Humanoid")
             if not hrp or not hum then esp.Dot.Visible = false; continue end
             if hum.Health <= 0 then esp.Dot.Visible = false; continue end
-            if Config.ESPTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then esp.Dot.Visible = false; continue end
+            if getgenv().Config.ESPTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then esp.Dot.Visible = false; continue end
             local myChar = LocalPlayer.Character
             local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myHRP then esp.Dot.Visible = false; continue end
             local distance = (myHRP.Position - hrp.Position).Magnitude
-            if distance > Config.ESPMaxDistance then esp.Dot.Visible = false; continue end
+            if distance > getgenv().Config.ESPMaxDistance then esp.Dot.Visible = false; continue end
             local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             if not onScreen then esp.Dot.Visible = false; continue end
             esp.Dot.Visible = true
             esp.Dot.Position = Vector2.new(pos.X, pos.Y)
-            esp.Dot.Radius = Config.ESPSize
-            esp.Dot.Color = Config.ESPColor
+            esp.Dot.Radius = getgenv().Config.ESPSize
+            if getgenv().Config.ESPUseTeamColor and player.Team then
+                esp.Dot.Color = player.TeamColor.Color
+            else
+                esp.Dot.Color = getgenv().Config.ESPColor
+            end
         end
     end
 end
 
 Players.PlayerRemoving:Connect(function(player) removeESP(player) end)
-Players.PlayerAdded:Connect(function(player) if Config.ESPEnabled then createESP(player) end end)
+Players.PlayerAdded:Connect(function(player) if getgenv().Config.ESPEnabled then createESP(player) end end)
 
 local function updateHitbox()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
             local char = plr.Character
             local hum = char:FindFirstChildOfClass("Humanoid")
-            local isEnemy = not Config.TeamCheck or plr.Team ~= LocalPlayer.Team
-            local isAlive = not Config.SanityCheck or (hum and hum.Health > 0)
-            if Config.HitboxStatus and isEnemy and isAlive then
+            local isEnemy = not getgenv().Config.TeamCheck or plr.Team ~= LocalPlayer.Team
+            local isAlive = not getgenv().Config.SanityCheck or (hum and hum.Health > 0)
+            if getgenv().Config.HitboxStatus and isEnemy and isAlive then
                 for _, part in pairs(char:GetChildren()) do
                     if part:IsA("BasePart") and shouldExpandPart(part.Name) then
-                        part.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
-                        part.Transparency = Config.HitboxTransparency
+                        part.Size = Vector3.new(getgenv().Config.HitboxSize, getgenv().Config.HitboxSize, getgenv().Config.HitboxSize)
+                        part.Transparency = getgenv().Config.HitboxTransparency
                         part.BrickColor = BrickColor.new("Really black")
                         part.Material = Enum.Material.Neon
                         part.CanCollide = false
