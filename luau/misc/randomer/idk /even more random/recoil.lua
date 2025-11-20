@@ -1,4 +1,4 @@
--- // Zero Recoil + Full Bright - FULLY SOLARA COMPATIBLE (NO ERRORS) \\
+-- // Zero Recoil + Full Bright - SOLARA PERFECT (Recoil FIXED) \\
 
 repeat task.wait() until game:IsLoaded()
 
@@ -14,18 +14,18 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 
 -- ==================== CONFIG ====================
-local RECOIL_STRENGTH = 3.5      -- Adjust this per game
-local RECOIL_INTERVAL = 0.002
+local RECOIL_STRENGTH = 3.5      -- Pixels down per tick (tune: 2-5 most games)
+local RECOIL_INTERVAL = 0.002    -- Super smooth pull rate
 local RECOIL_ENABLED = true
 local FULLBRIGHT_ENABLED = false
 -- ================================================
 
 local holdingLMB = false
 
--- Recoil Function
+-- FIXED Recoil (Solara: mousemoverel)
 local function pullDown()
     if RECOIL_ENABLED and holdingLMB then
-        mousemove_rel(0, RECOIL_STRENGTH)
+        mousemoverel(0, RECOIL_STRENGTH)
     end
 end
 
@@ -44,7 +44,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
     end
 end)
 
--- Full Bright (forces every frame)
+-- Full Bright (anti-reset loop)
 local function forceFullBright()
     if not FULLBRIGHT_ENABLED then return end
     
@@ -62,7 +62,7 @@ local function forceFullBright()
     end
 end
 
--- Connections
+-- Loops
 RunService.Heartbeat:Connect(function()
     pullDown()
     task.wait(RECOIL_INTERVAL)
@@ -70,24 +70,31 @@ end)
 
 RunService.RenderStepped:Connect(forceFullBright)
 
--- Toggle Keys (FIXED - no more typo!)
+-- Toggle Keys (optimized debounce - only triggers on bind keys)
 local canToggle = true
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed or not canToggle then return end
-    canToggle = false
-
+    
     if input.KeyCode == Enum.KeyCode.End then
+        canToggle = false
         RECOIL_ENABLED = not RECOIL_ENABLED
         print("Zero Recoil:", RECOIL_ENABLED and "ON" or "OFF")
-
+        task.spawn(function()
+            task.wait(0.2)
+            canToggle = true
+        end)
+        
     elseif input.KeyCode == Enum.KeyCode.Home then
+        canToggle = false
         FULLBRIGHT_ENABLED = not FULLBRIGHT_ENABLED
         print("Full Bright:", FULLBRIGHT_ENABLED and "ON" or "OFF")
+        task.spawn(function()
+            task.wait(0.2)
+            canToggle = true
+        end)
     end
-
-    task.wait(0.2)
-    canToggle = true
 end)
 
-print("Script successfully loaded - NO ERRORS")
-print("Hold LMB = Zero Recoil | End = Toggle Recoil | Home = Toggle FullBright")
+print("✅ Solara FIXED - Recoil + FullBright LOADED")
+print("Hold LMB = PERFECT zero recoil | End = Toggle recoil | Home = Toggle FullBright")
+print("Tune RECOIL_STRENGTH if needed (higher = stronger pull down)")
