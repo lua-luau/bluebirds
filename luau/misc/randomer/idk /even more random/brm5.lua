@@ -1,123 +1,95 @@
 --[[
-    Male Model Highlighter - Powered by Fluent
-    Press INSERT to open/close the menu
+    Male Model Highlighter - Kavo UI Edition (Solara Compatible)
+    Press RightShift to open/close menu
     Default: Enabled (ON)
 ]]
 
-repeat task.wait() until game:IsLoaded()
-
-local Fluent = loadstring(game:HttpGet("https://github.com/acsu123/Fluent/releases/latest/download/main.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/acsu123/Fluent/master/Addons/SaveManager.lua"))()
-local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/acsu123/Fluent/master/Addons/InterfaceManager.lua"))()
-
-local Window = Fluent:CreateWindow({
-    Title = "Male Highlighter",
-    SubTitle = "by YourName",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(480, 360),
-    Acrylic = true,
-    Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.Insert
-})
+-- Load Kavo UI Library (most popular & easy for Solara)
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Library.CreateLib("Male Highlighter", "DarkTheme")
 
 -- Services
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
--- Settings (will be saved automatically)
-local Options = Fluent.Options
+-- Settings (defaults)
+local Settings = {
+    Enabled = true,
+    FillColor = Color3.fromRGB(0, 255, 200),
+    OutlineColor = Color3.fromRGB(255, 255, 255),
+    FillTransparency = 0.75
+}
 
 -- Main Tab
-local MainTab = Window:AddTab({ Title = "Main", Icon = "user" })
+local MainTab = Window:NewTab("Main")
+local MainSection = MainTab:NewSection("Male Model Highlighter")
 
-MainTab:AddParagraph({
-    Title = "Male Model Highlighter",
-    Content = "Automatically highlights all models named 'Male' in Workspace.\nDefault: Enabled | Press Insert to toggle menu."
-})
+MainSection:NewParagraph("Automatically highlights all 'Male' models in Workspace. | Default: ON")
 
-local Toggle = MainTab:AddToggle("HighlightToggle", {
-    Title = "Enable Highlighter",
-    Default = true,
-    Callback = function() end
-})
-
-local ColorPicker = MainTab:AddColorpicker("HighlightColor", {
-    Title = "Fill Color",
-    Default = Color3.fromRGB(0, 255, 200),
-    Callback = function() end
-})
-
-local OutlineColorPicker = MainTab:AddColorpicker("OutlineColor", {
-    Title = "Outline Color",
-    Default = Color3.fromRGB(255, 255, 255),
-    Callback = function() end
-})
-
-local TransparencySlider = MainTab:AddSlider("Transparency", {
-    Title = "Fill Transparency",
-    Min = 0,
-    Max = 100,
-    Default = 75,
-    Rounding = 1,
-    Callback = function() end
-})
-
--- Highlight Management
-local function ApplyHighlights()
-    if not Toggle.Value then
-        -- Remove all Male highlights when disabled
-        for _, obj in ipairs(Workspace:GetDescendants()) do
+-- Toggle
+MainSection:NewToggle("EnableToggle", "Enable Highlighter", function(state)
+    Settings.Enabled = state
+    if not state then
+        -- Clean up highlights when disabled
+        for _, obj in pairs(Workspace:GetDescendants()) do
             if obj:IsA("Highlight") and obj.Adornee and obj.Adornee.Name == "Male" then
                 obj:Destroy()
             end
         end
-        return
     end
+end)
+local Toggle = MainSection:GetToggle("EnableToggle")
+Toggle:Toggle(true)  -- Default ON
 
-    for _, model in ipairs(Workspace:GetChildren()) do
+-- Color Picker (Fill)
+MainSection:NewColorPicker("FillColor", "Fill Color", Color3.fromRGB(0, 255, 200), function(color)
+    Settings.FillColor = color
+end)
+
+-- Color Picker (Outline)
+MainSection:NewColorPicker("OutlineColor", "Outline Color", Color3.fromRGB(255, 255, 255), function(color)
+    Settings.OutlineColor = color
+end)
+
+-- Transparency Slider
+MainSection:NewSlider("TransSlider", "Fill Transparency", 75, 0, function(s)
+    Settings.FillTransparency = s / 100
+end)
+
+-- Highlight Function
+local function ApplyHighlights()
+    if not Settings.Enabled then return end
+
+    for _, model in pairs(Workspace:GetChildren()) do
         if model:IsA("Model") and model.Name == "Male" and model.PrimaryPart then
             local highlight = model:FindFirstChildOfClass("Highlight")
             if not highlight then
                 highlight = Instance.new("Highlight")
                 highlight.Adornee = model
                 highlight.Parent = model
+                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             end
 
-            highlight.FillColor = ColorPicker.Value
-            highlight.OutlineColor = OutlineColorPicker.Value
-            highlight.FillTransparency = TransparencySlider.Value / 100
+            highlight.FillColor = Settings.FillColor
+            highlight.OutlineColor = Settings.OutlineColor
+            highlight.FillTransparency = Settings.FillTransparency
             highlight.OutlineTransparency = 0
-            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         end
     end
 end
 
--- Real-time update on every change
-Toggle:OnChanged(function() ApplyHighlights() end)
-ColorPicker:OnChanged(function() ApplyHighlights() end)
-OutlineColorPicker:OnChanged(function() ApplyHighlights() end)
-TransparencySlider:OnChanged(function() ApplyHighlights() end)
-
--- Efficient loop
-RunService.Heartbeat:Connect(ApplyHighlights)
-
--- Auto-save settings
-SaveManager:SetLibrary(Fluent)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetFolder("FluentConfig/MaleHighlighter")
-InterfaceManager:SetLibrary(Fluent)
-InterfaceManager:SetFolder("FluentConfig")
-
-SaveManager:BuildConfigSection(MainTab)
-InterfaceManager:BuildInterfaceSection(MainTab)
-
-Window:SelectTab(1)
-
-Fluent:Notify({
-    Title = "Male Highlighter",
-    Content = "Loaded successfully! Press Insert to open menu.",
-    Duration = 5
-})
+-- Real-time updates
+spawn(function()
+    while true do
+        ApplyHighlights()
+        wait(0.5)  -- Efficient tick rate (non-blocking)
+    end
+end)
 
 -- Initial apply
 ApplyHighlights()
+
+-- Notification (Kavo built-in)
+Library:Notify("Male Highlighter loaded! Press RightShift for menu.", 5)
+
+print("Kavo Male Highlighter ready for Solara! ✨")
