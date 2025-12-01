@@ -1,70 +1,89 @@
-local RunService=game:GetService("RunService")
-local Workspace=game:GetService("Workspace")
-local Camera=workspace.CurrentCamera
-local Players=game:GetService("Players")
-local UserInputService=game:GetService("UserInputService")
+--[[
+    Transparent Highlight ESP for "Male" models
+    (Executor Friendly)
+    - Fill: 100% transparent
+    - Outline: 75% transparent, 1px thick look
+    - Toggle: RightShift + P
+]]
 
-local ESP={}
-local connection
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local function clearESP()
-    for _,box in pairs(ESP)do
-        for i=1,4 do if box[i]then box[i]:Remove()end end
+local ESP_Enabled = false
+local Highlights = {} -- To keep track and clean up
+
+local function createHighlight(model)
+    if model:FindFirstChildOfClass("Highlight") then
+        return
     end
-    ESP={}
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "CustomESP"
+    highlight.Adornee = model
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = 1          -- Completely transparent fill
+    highlight.OutlineTransparency = 0.75    -- 75% transparent outline
+    highlight.OutlineColor = Color3.fromRGB(0, 255, 200)  -- Cyan outline
+    highlight.Parent = model
+
+    table.insert(Highlights, highlight)
 end
 
-local function isEnemy(model)
-    local player=Players:GetPlayerFromCharacter(model)
-    if not player then return true end
-    if not player.Team or not Players.LocalPlayer.Team then return true end
-    return player.Team~=Players.LocalPlayer.Team
-end
-
-local function updateESP()
-    clearESP()
-    for _,model in pairs(Workspace:GetChildren())do
-        if model.Name=="Male"and model:FindFirstChild("HumanoidRootPart")and model:FindFirstChild("Humanoid")and model.Humanoid.Health>0 and isEnemy(model)then
-            local root=model.HumanoidRootPart
-            local head=model:FindFirstChild("Head")or root
-            local pos,onScreen=Camera:WorldToViewportPoint(root.Position)
-            if onScreen then
-                local topY=Camera:WorldToViewportPoint(head.Position+Vector3.new(0,3,0)).Y
-                local botY=Camera:WorldToViewportPoint(root.Position-Vector3.new(0,4,0)).Y
-                local height=math.abs(topY-botY)
-                local width=height*0.6
-                local x=pos.X-width/2
-                local y=pos.Y-height/2
-                local box={}
-                for i=1,4 do
-                    box[i]=Drawing.new("Line")
-                    box[i].Thickness=2
-                    box[i].Color=Color3.fromRGB(0,255,200)
-                    box[i].Visible=true
-                end
-                box[1].From=Vector2.new(x,y);box[1].To=Vector2.new(x+width,y)
-                box[2].From=Vector2.new(x+width,y);box[2].To=Vector2.new(x+width,y+height)
-                box[3].From=Vector2.new(x+width,y+height);box[3].To=Vector2.new(x,y+height)
-                box[4].From=Vector2.new(x,y+height);box[4].To=Vector2.new(x,y)
-                table.insert(ESP,box)
-            end
+local function applyESP()
+    for _, object in pairs(workspace:GetDescendants()) do
+        if object:IsA("Model") and object.Name == "Male" and object:FindFirstChild("Head") then
+            createHighlight(object)
         end
     end
 end
 
+local function clearESP()
+    for _, hl in pairs(Highlights) do
+        if hl and hl.Parent then
+            hl:Destroy()
+        end
+    end
+    Highlights = {}
+end
+
 local function toggleESP()
-    if connection then
-        connection:Disconnect()
-        connection=nil
-        clearESP()
+    ESP_Enabled = not ESP_Enabled
+    
+    if ESP_Enabled then
+        print("ESP Enabled - Thin cyan outline on Male models")
+        applyESP()
     else
-        connection=RunService.RenderStepped:Connect(updateESP)
+        print("ESP Disabled")
+        clearESP()
     end
 end
 
-UserInputService.InputBegan:Connect(function(input,gameProcessed)
+-- Toggle with Right Shift + P
+local rshiftDown = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode==Enum.KeyCode.RightBracket then toggleESP()end
+
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        rshiftDown = true
+    elseif input.KeyCode == Enum.KeyCode.P and rshiftDown then
+        toggleESP()
+    end
 end)
 
-connection=RunService.RenderStepped:Connect(updateESP)
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        rshiftDown = false
+    end
+end)
+
+-- Optional: Re-apply on new Male models spawning
+workspace.DescendantAdded:Connect(function(child)
+    if ESP_Enabled and child:IsA("Model") and child.Name == "Male" and child:FindFirstChild("Head") then
+        task.wait(0.5) -- Small delay to ensure model fully loads
+        createHighlight(child)
+    end
+end)
+
+print("Thin Outline ESP Loaded | Toggle: RightShift + P")
