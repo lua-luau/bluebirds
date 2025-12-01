@@ -1,95 +1,70 @@
---[[
-    Male Model Highlighter - Kavo UI Edition (Solara Compatible)
-    Press RightShift to open/close menu
-    Default: Enabled (ON)
-]]
+local RunService=game:GetService("RunService")
+local Workspace=game:GetService("Workspace")
+local Camera=workspace.CurrentCamera
+local Players=game:GetService("Players")
+local UserInputService=game:GetService("UserInputService")
 
--- Load Kavo UI Library (most popular & easy for Solara)
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
-local Window = Library.CreateLib("Male Highlighter", "DarkTheme")
+local ESP={}
+local connection
 
--- Services
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-
--- Settings (defaults)
-local Settings = {
-    Enabled = true,
-    FillColor = Color3.fromRGB(0, 255, 200),
-    OutlineColor = Color3.fromRGB(255, 255, 255),
-    FillTransparency = 0.75
-}
-
--- Main Tab
-local MainTab = Window:NewTab("Main")
-local MainSection = MainTab:NewSection("Male Model Highlighter")
-
-MainSection:NewParagraph("Automatically highlights all 'Male' models in Workspace. | Default: ON")
-
--- Toggle
-MainSection:NewToggle("EnableToggle", "Enable Highlighter", function(state)
-    Settings.Enabled = state
-    if not state then
-        -- Clean up highlights when disabled
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Highlight") and obj.Adornee and obj.Adornee.Name == "Male" then
-                obj:Destroy()
-            end
-        end
+local function clearESP()
+    for _,box in pairs(ESP)do
+        for i=1,4 do if box[i]then box[i]:Remove()end end
     end
-end)
-local Toggle = MainSection:GetToggle("EnableToggle")
-Toggle:Toggle(true)  -- Default ON
+    ESP={}
+end
 
--- Color Picker (Fill)
-MainSection:NewColorPicker("FillColor", "Fill Color", Color3.fromRGB(0, 255, 200), function(color)
-    Settings.FillColor = color
-end)
+local function isEnemy(model)
+    local player=Players:GetPlayerFromCharacter(model)
+    if not player then return true end
+    if not player.Team or not Players.LocalPlayer.Team then return true end
+    return player.Team~=Players.LocalPlayer.Team
+end
 
--- Color Picker (Outline)
-MainSection:NewColorPicker("OutlineColor", "Outline Color", Color3.fromRGB(255, 255, 255), function(color)
-    Settings.OutlineColor = color
-end)
-
--- Transparency Slider
-MainSection:NewSlider("TransSlider", "Fill Transparency", 75, 0, function(s)
-    Settings.FillTransparency = s / 100
-end)
-
--- Highlight Function
-local function ApplyHighlights()
-    if not Settings.Enabled then return end
-
-    for _, model in pairs(Workspace:GetChildren()) do
-        if model:IsA("Model") and model.Name == "Male" and model.PrimaryPart then
-            local highlight = model:FindFirstChildOfClass("Highlight")
-            if not highlight then
-                highlight = Instance.new("Highlight")
-                highlight.Adornee = model
-                highlight.Parent = model
-                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+local function updateESP()
+    clearESP()
+    for _,model in pairs(Workspace:GetChildren())do
+        if model.Name=="Male"and model:FindFirstChild("HumanoidRootPart")and model:FindFirstChild("Humanoid")and model.Humanoid.Health>0 and isEnemy(model)then
+            local root=model.HumanoidRootPart
+            local head=model:FindFirstChild("Head")or root
+            local pos,onScreen=Camera:WorldToViewportPoint(root.Position)
+            if onScreen then
+                local topY=Camera:WorldToViewportPoint(head.Position+Vector3.new(0,3,0)).Y
+                local botY=Camera:WorldToViewportPoint(root.Position-Vector3.new(0,4,0)).Y
+                local height=math.abs(topY-botY)
+                local width=height*0.6
+                local x=pos.X-width/2
+                local y=pos.Y-height/2
+                local box={}
+                for i=1,4 do
+                    box[i]=Drawing.new("Line")
+                    box[i].Thickness=2
+                    box[i].Color=Color3.fromRGB(0,255,200)
+                    box[i].Visible=true
+                end
+                box[1].From=Vector2.new(x,y);box[1].To=Vector2.new(x+width,y)
+                box[2].From=Vector2.new(x+width,y);box[2].To=Vector2.new(x+width,y+height)
+                box[3].From=Vector2.new(x+width,y+height);box[3].To=Vector2.new(x,y+height)
+                box[4].From=Vector2.new(x,y+height);box[4].To=Vector2.new(x,y)
+                table.insert(ESP,box)
             end
-
-            highlight.FillColor = Settings.FillColor
-            highlight.OutlineColor = Settings.OutlineColor
-            highlight.FillTransparency = Settings.FillTransparency
-            highlight.OutlineTransparency = 0
         end
     end
 end
 
--- Real-time updates
-spawn(function()
-    while true do
-        ApplyHighlights()
-        wait(0.5)  -- Efficient tick rate (non-blocking)
+local function toggleESP()
+    if connection then
+        connection:Disconnect()
+        connection=nil
+        clearESP()
+    else
+        connection=RunService.RenderStepped:Connect(updateESP)
     end
+end
+
+UserInputService.InputBegan:Connect(function(input,gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode==Enum.KeyCode.RightBracket then toggleESP()end
 end)
 
--- Initial apply
-ApplyHighlights()
-
--- Notification (Kavo built-in)
-Library:Notify("Male Highlighter loaded! Press RightShift for menu.", 5)
-
-print("Kavo Male Highlighter ready for Solara! ✨")
+connection=RunService.RenderStepped:Connect(updateESP)
