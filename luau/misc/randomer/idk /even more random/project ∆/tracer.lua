@@ -1,90 +1,102 @@
--- Project Delta - Pure Visual Tracer (Solara only)
--- Nothing else, no highlights, no FOV circle, no bullet touch
+-- Project Delta - True 3D Directional Tracer (NO SNAP, just where you're looking)
+-- Fires a gorgeous glowing tracer in your exact aim direction - Solara / All Executors
 
-local Camera = workspace.CurrentCamera
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
 
-local Tracers = {}
+local TracerFolder = Instance.new("Folder")
+TracerFolder.Name = "DeltaTrueTracers"
+TracerFolder.Parent = Workspace
 
-local function CreateTracer(toPos)
-    local line = Drawing.new("Line")
-    line.Thickness = 1.7
-    line.Color = Color3.fromRGB(255, 100, 255)
-    line.Transparency = 1
-    line.From = Vector2.new(Mouse.X, Mouse.Y + 36)  -- mouse position
-    line.To = toPos
-    line.Visible = true
+local function CreateDirectionalTracer()
+    local startPos = Camera.CFrame.Position
+    local direction = Camera.CFrame.LookVector
+    local endPos = startPos + direction * 500  -- long enough to go across any map
 
-    table.insert(Tracers, line)
+    -- Two invisible parts for attachments
+    local part0 = Instance.new("Part")
+    local part1 = Instance.new("Part")
+    part0.Transparency = 1
+    part1.Transparency = 1
+    part0.Size = Vector3.new(0.1, 0.1, 0.1)
+    part1.Size = Vector3.new(0.1, 0.1, 0.1)
+    part0.Anchored = true
+    part1.Anchored = true
+    part0.CanCollide = false
+    part1.CanCollide = false
+    part0.CFrame = CFrame.new(startPos)
+    part1.CFrame = CFrame.new(endPos)
+    part0.Parent = TracerFolder
+    part1.Parent = TracerFolder
 
-    spawn(function()
-        for i = 1, 0, -0.07 do
-            task.wait()
-            line.Transparency = i
+    -- Main Beam (glowing purple-pink)
+    local beam = Instance.new("Beam")
+    beam.Color = ColorSequence.new(Color3.fromRGB(255, 80, 255))
+    beam.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)})
+    beam.Width0 = 1.4
+    beam.Width1 = 0.1
+    beam.LightEmission = 1
+    beam.Brightness = 8
+    beam.FaceCamera = true
+
+    local att0 = Instance.new("Attachment", part0)
+    local att1 = Instance.new("Attachment", part1)
+    beam.Attachment0 = att0
+    beam.Attachment1 = att1
+    beam.Parent = part0
+
+    -- Extra thick glowing trail
+    local trail = Instance.new("Trail")
+    trail.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 120, 255)),
+        ColorSequenceKeypoint.new(0.8, Color3.fromRGB(200, 0, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 0, 200))
+    }
+    trail.Transparency = NumberSequence.new(0.05, 1)
+    trail.WidthScale = NumberSequence.new(2.5, 0)
+    trail.Lifetime = 0.4
+    trail.LightEmission = 1
+    trail.Attachment0 = att0
+    trail.Attachment1 = att1
+    trail.Parent = part0
+
+    -- Animation: tracer flies forward with slight arc
+    local time = 0
+    local duration = 0.35
+    local gravity = Vector3.new(0, -18, 0)
+
+    local conn
+    conn = RunService.Heartbeat:Connect(function(dt)
+        time += dt
+        local t = math.min(time / duration, 1)
+        local ease = 1 - (1 - t)^2
+
+        local offset = gravity * (t ^ 2) * 12
+        local currentEnd = startPos + direction * (150 + ease * 400) + offset
+
+        part1.CFrame = CFrame.new(currentEnd)
+
+        if t >= 1 then
+            conn:Disconnect()
+            task.delay(0.15, function()
+                part0:Destroy()
+                part1:Destroy()
+            end)
         end
-        line:Remove()
     end)
 end
 
+-- Fire tracer only when holding left click
 RunService.RenderStepped:Connect(function()
-    if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
-
-    local closest = nil
-    local bestDist = 300
-
-    -- Players
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        local char = plr.Character
-        if not char or not char:FindFirstChild("Head") then continue end
-        local head = char.Head
-        local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-        if onScreen then
-            local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
-            if dist < bestDist then
-                bestDist = dist
-                closest = Vector2.new(pos.X, pos.Y)
-            end
-        end
-    end
-
-    -- AiZones (bots)
-    if workspace:FindFirstChild("AiZones") then
-        for _, zone in workspace.AiZones:GetChildren() do
-            for _, bot in zone:GetChildren() do
-                local head = bot:FindFirstChild("Head")
-                if head then
-                    local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                    if onScreen then
-                        local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
-                        if dist < bestDist then
-                            bestDist = dist
-                            closest = Vector2.new(pos.X, pos.Y)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if closest then
-        CreateTracer(closest)
+    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        CreateDirectionalTracer()
+        task.wait(0.06)  -- controls fire rate of tracers (lower = more tracers)
     end
 end)
 
--- cleanup
-spawn(function()
-    while task.wait(3) do
-        for i = #Tracers, 1, -1 do
-            local t = Tracers[i]
-            if not t.Visible then table.remove(Tracers, i) end
-        end
-    end
-end)
-
-print("Pure tracer loaded - Project Delta / Solara")
+print("Project Delta - True Directional 3D Tracer Loaded (No Snap - Just Pure Style)")
