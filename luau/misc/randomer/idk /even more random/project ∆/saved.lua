@@ -4,7 +4,7 @@
 local shared, cloneref = shared or getrenv().shared or {},cloneref or function(o) return o end;
 if _G.API then _G.API:Notify(string.format("> Kaori6.exe is Already Running~"),5);Sound:Play("Error") return end;
 
-shared.Settings = {["ToggleUI"] = (Enum.KeyCode.V),["AutoShowUI"] = (true), -- // Shows UI on launch.
+shared.Settings = {["ToggleUI"] = (Enum.KeyCode.Backslash),["AutoShowUI"] = (true), -- // Shows UI on launch.
     AimbotChecks = {ShootCooldown = (0), -- // 1 = Second Shoot CD.
         ["ShootReactor"] = function(isShooting)
             if isShooting and Library.IsRobloxFocused then mouse1press() else mouse1release() end; -- // Dont touch -_-
@@ -30,7 +30,7 @@ shared.Settings = {["ToggleUI"] = (Enum.KeyCode.V),["AutoShowUI"] = (true), -- /
     --]]
 
     -- // Universal Example:
-        ["AimbotNpcs"] = {Supported = {workspace}, -- // Npc Path/s.
+        ["AimbotNpcs"] = {Supported = {workspace.AiZones}, -- // Npc Path/s.
             Whitelist = {"1","2","3"}, -- // Names can be shortened aswell.
             DeepCheck = (true), -- // Deepcheck smarter scans for Npcs (Slightly Fps Drops).
         },
