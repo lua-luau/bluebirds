@@ -1,45 +1,26 @@
--- LocalScript (place in StarterPlayerScripts or StarterGui)
+-- Executor-only one-liner version (works instantly, no matter when Characters folder spawns)
 
 local Highlight = Instance.new("Highlight")
-Highlight.FillColor = Color3.fromRGB(0, 255, 255)      -- Cyan fill (you can change)
-Highlight.OutlineColor = Color3.fromRGB(255, 255, 0)  -- Yellow outline (very visible)
-Highlight.FillTransparency = 0.5                      -- Semi-transparent fill
-Highlight.OutlineTransparency = 0                     -- Solid outline
-Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Always visible through walls
-Highlight.Enabled = true
+Highlight.FillColor = Color3.new(0, 1, 1)           -- Cyan fill
+Highlight.OutlineColor = Color3.new(1, 1, 0)     -- Bright yellow outline
+Highlight.FillTransparency = 0.5
+Highlight.OutlineTransparency = 0
+Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 
-local CharactersFolder = game:GetService("Workspace"):WaitForChild("Characters")
-
--- Function to highlight a model
-local function addHighlight(model)
-	if model:IsA("Model") and model:FindFirstChild("HumanoidRootPart") then
-		-- Clone the Highlight and parent it to the model
-		local highlightClone = Highlight:Clone()
-		highlightClone.Adornee = model
-		highlightClone.Parent = model
-	end
+local function highlightAll()
+    local chars = game.Workspace:FindFirstChild("Characters") or game.Workspace:FindFirstChild("characters")
+    if not chars then return end
+    
+    for _, model in pairs(chars:GetChildren()) do
+        if model:IsA("Model") and not model:FindFirstChildWhichIsA("Highlight") then
+            local h = Highlight:Clone()
+            h.Adornee = model
+            h.Parent = model
+        end
+    end
 end
 
--- Highlight existing characters
-for _, model in ipairs(CharactersFolder:GetChildren()) do
-	addHighlight(model)
+-- Run every 1 second forever (executor keeps it alive)
+while task.wait(1) do
+    pcall(highlightAll)  -- pcall so it never crashes even if something breaks
 end
-
--- Highlight any new characters that spawn later (very important in multiplayer)
-CharactersFolder.ChildAdded:Connect(function(child)
-	-- Small delay in case the model is still loading parts
-	task.wait(0.5)
-	addHighlight(child)
-end)
-
--- Optional: Remove highlight when character is removed (clean up memory)
-CharactersFolder.ChildRemoved:Connect(function(child)
-	-- Destroy any Highlight instances inside the removed model
-	for _, obj in ipairs(child:GetDescendants()) do
-		if obj:IsA("Highlight") then
-			obj:Destroy()
-		end
-	end
-end)
-
-print("Highlight script active on Workspace/Characters!")
