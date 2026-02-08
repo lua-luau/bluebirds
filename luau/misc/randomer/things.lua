@@ -621,4 +621,500 @@ local function UpdateESP()
     
     -- Update rainbow
     if Config.Rainbow.Enabled then
-      
+        State.RainbowHue = (State.RainbowHue + (0.01 / Config.Rainbow.Speed)) % 1
+    end
+    
+    -- Return previous objects to pool
+    for _, playerData in pairs(ESPData) do
+        if playerData.Objects then
+            for _, data in ipairs(playerData.Objects) do
+                ReturnToPool(data.Pool, data.Object)
+            end
+        end
+    end
+    ESPData = {}
+    
+    -- Draw new frame
+    for _, player in ipairs(Players:GetPlayers()) do
+        local character = player.Character
+        if not character then continue end
+        
+        local parts = GetCharacterParts(character)
+        if not parts then continue end
+        
+        local distance = (parts.Root.Position - Camera.CFrame.Position).Magnitude
+        
+        if not ShouldShowPlayer(player, distance) then continue end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local drawnObjects = {}
+        
+        -- Draw all ESP elements
+        DrawSkeleton(parts, distance, drawnObjects)
+        local boxCorners = DrawBox(parts, distance, drawnObjects)
+        DrawHealthBar(parts, boxCorners, humanoid, drawnObjects)
+        DrawTracers(parts.Root, distance, drawnObjects)
+        DrawViewAngle(parts.Root, drawnObjects)
+        DrawInformation(player, parts, distance, humanoid, drawnObjects)
+        
+        ESPData[player] = {
+            Objects = drawnObjects,
+            Distance = distance,
+        }
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  INITIALIZATION
+-- ═══════════════════════════════════════════════════════════════
+
+local renderConnection = RunService.RenderStepped:Connect(UpdateESP)
+
+-- Toggle hotkey
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Config.ToggleKey then
+        State.Enabled = not State.Enabled
+        if not State.Enabled then
+            -- Clear all ESP when disabled
+            for _, playerData in pairs(ESPData) do
+                if playerData.Objects then
+                    for _, data in ipairs(playerData.Objects) do
+                        ReturnToPool(data.Pool, data.Object)
+                    end
+                end
+            end
+            ESPData = {}
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+--  GUI INTERFACE
+-- ═══════════════════════════════════════════════════════════════
+
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+
+if success and Rayfield then
+    local Window = Rayfield:CreateWindow({
+        Name = "🎯 Premium ESP v4.0",
+        LoadingTitle = "Loading ESP System",
+        LoadingSubtitle = "Polished Edition",
+        ConfigurationSaving = {
+            Enabled = true,
+            FolderName = "PremiumESP",
+            FileName = "Config"
+        },
+    })
+    
+    -- ═══════════════════════════════════════════════════════════
+    --  TABS
+    -- ═══════════════════════════════════════════════════════════
+    
+    local VisualsTab = Window:CreateTab("👁️ Visuals", 4483362458)
+    local FiltersTab = Window:CreateTab("🔍 Filters", 4483362458)
+    local ColorsTab = Window:CreateTab("🎨 Colors", 4483362458)
+    local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
+    
+    -- ═══════════════════════════════════════════════════════════
+    --  VISUALS TAB
+    -- ═══════════════════════════════════════════════════════════
+    
+    local SkeletonSection = VisualsTab:CreateSection("Skeleton ESP")
+    
+    VisualsTab:CreateToggle({
+        Name = "Enable Skeleton",
+        CurrentValue = Config.Skeleton.Enabled,
+        Callback = function(value)
+            Config.Skeleton.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "Skeleton Thickness",
+        Range = {1, 6},
+        Increment = 0.5,
+        CurrentValue = Config.Skeleton.Thickness,
+        Callback = function(value)
+            Config.Skeleton.Thickness = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "Skeleton Transparency",
+        Range = {0, 1},
+        Increment = 0.05,
+        CurrentValue = Config.Skeleton.Transparency,
+        Callback = function(value)
+            Config.Skeleton.Transparency = value
+        end,
+    })
+    
+    local BoxSection = VisualsTab:CreateSection("Box ESP")
+    
+    VisualsTab:CreateToggle({
+        Name = "Enable Box",
+        CurrentValue = Config.Box.Enabled,
+        Callback = function(value)
+            Config.Box.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Filled Box",
+        CurrentValue = Config.Box.Filled,
+        Callback = function(value)
+            Config.Box.Filled = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "Box Thickness",
+        Range = {1, 6},
+        Increment = 0.5,
+        CurrentValue = Config.Box.Thickness,
+        Callback = function(value)
+            Config.Box.Thickness = value
+        end,
+    })
+    
+    local HealthSection = VisualsTab:CreateSection("Health Bar")
+    
+    VisualsTab:CreateToggle({
+        Name = "Enable Health Bar",
+        CurrentValue = Config.HealthBar.Enabled,
+        Callback = function(value)
+            Config.HealthBar.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Health Gradient",
+        CurrentValue = Config.HealthBar.GradientEnabled,
+        Callback = function(value)
+            Config.HealthBar.GradientEnabled = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "Health Bar Width",
+        Range = {2, 8},
+        Increment = 1,
+        CurrentValue = Config.HealthBar.Width,
+        Callback = function(value)
+            Config.HealthBar.Width = value
+        end,
+    })
+    
+    local TracersSection = VisualsTab:CreateSection("Tracers")
+    
+    VisualsTab:CreateToggle({
+        Name = "Enable Tracers",
+        CurrentValue = Config.Tracers.Enabled,
+        Callback = function(value)
+            Config.Tracers.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateDropdown({
+        Name = "Tracer Origin",
+        Options = {"Top", "Middle", "Bottom"},
+        CurrentOption = Config.Tracers.Origin,
+        Callback = function(value)
+            Config.Tracers.Origin = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "Tracer Thickness",
+        Range = {0.5, 5},
+        Increment = 0.5,
+        CurrentValue = Config.Tracers.Thickness,
+        Callback = function(value)
+            Config.Tracers.Thickness = value
+        end,
+    })
+    
+    local InfoSection = VisualsTab:CreateSection("Information Display")
+    
+    VisualsTab:CreateToggle({
+        Name = "Show Names",
+        CurrentValue = Config.Text.Name.Enabled,
+        Callback = function(value)
+            Config.Text.Name.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Show Distance",
+        CurrentValue = Config.Text.Distance.Enabled,
+        Callback = function(value)
+            Config.Text.Distance.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Show Health",
+        CurrentValue = Config.Text.Health.Enabled,
+        Callback = function(value)
+            Config.Text.Health.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Show Weapon",
+        CurrentValue = Config.Text.Weapon.Enabled,
+        Callback = function(value)
+            Config.Text.Weapon.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateToggle({
+        Name = "Scale Text with Distance",
+        CurrentValue = Config.Text.ScaleWithDistance,
+        Callback = function(value)
+            Config.Text.ScaleWithDistance = value
+        end,
+    })
+    
+    local ViewAngleSection = VisualsTab:CreateSection("View Angle")
+    
+    VisualsTab:CreateToggle({
+        Name = "Enable View Angle",
+        CurrentValue = Config.ViewAngle.Enabled,
+        Callback = function(value)
+            Config.ViewAngle.Enabled = value
+        end,
+    })
+    
+    VisualsTab:CreateSlider({
+        Name = "View Angle Length",
+        Range = {3, 15},
+        Increment = 1,
+        CurrentValue = Config.ViewAngle.Length,
+        Callback = function(value)
+            Config.ViewAngle.Length = value
+        end,
+    })
+    
+    -- ═══════════════════════════════════════════════════════════
+    --  FILTERS TAB
+    -- ═══════════════════════════════════════════════════════════
+    
+    local FilterSection = FiltersTab:CreateSection("Target Filters")
+    
+    FiltersTab:CreateToggle({
+        Name = "Team Check",
+        CurrentValue = Config.TeamCheck,
+        Callback = function(value)
+            Config.TeamCheck = value
+        end,
+    })
+    
+    FiltersTab:CreateToggle({
+        Name = "Health Check (Hide Dead)",
+        CurrentValue = Config.HealthCheck,
+        Callback = function(value)
+            Config.HealthCheck = value
+        end,
+    })
+    
+    FiltersTab:CreateToggle({
+        Name = "Visibility Check",
+        CurrentValue = Config.VisibilityCheck,
+        Callback = function(value)
+            Config.VisibilityCheck = value
+        end,
+    })
+    
+    local DistanceSection = FiltersTab:CreateSection("Distance Filters")
+    
+    FiltersTab:CreateSlider({
+        Name = "Max Distance (studs)",
+        Range = {100, 3000},
+        Increment = 50,
+        CurrentValue = Config.MaxDistance,
+        Callback = function(value)
+            Config.MaxDistance = value
+        end,
+    })
+    
+    FiltersTab:CreateSlider({
+        Name = "Min Distance (studs)",
+        Range = {0, 500},
+        Increment = 10,
+        CurrentValue = Config.MinDistance,
+        Callback = function(value)
+            Config.MinDistance = value
+        end,
+    })
+    
+    -- ═══════════════════════════════════════════════════════════
+    --  COLORS TAB
+    -- ═══════════════════════════════════════════════════════════
+    
+    local RainbowSection = ColorsTab:CreateSection("Rainbow Mode")
+    
+    ColorsTab:CreateToggle({
+        Name = "Enable Rainbow",
+        CurrentValue = Config.Rainbow.Enabled,
+        Callback = function(value)
+            Config.Rainbow.Enabled = value
+        end,
+    })
+    
+    ColorsTab:CreateSlider({
+        Name = "Rainbow Speed",
+        Range = {1, 10},
+        Increment = 1,
+        CurrentValue = Config.Rainbow.Speed,
+        Callback = function(value)
+            Config.Rainbow.Speed = value
+        end,
+    })
+    
+    local ColorSection = ColorsTab:CreateSection("Custom Colors")
+    
+    ColorsTab:CreateColorPicker({
+        Name = "Skeleton Color",
+        Color = Config.Skeleton.Color,
+        Callback = function(value)
+            Config.Skeleton.Color = value
+        end,
+    })
+    
+    ColorsTab:CreateColorPicker({
+        Name = "Box Color",
+        Color = Config.Box.Color,
+        Callback = function(value)
+            Config.Box.Color = value
+        end,
+    })
+    
+    ColorsTab:CreateColorPicker({
+        Name = "Tracer Color",
+        Color = Config.Tracers.Color,
+        Callback = function(value)
+            Config.Tracers.Color = value
+        end,
+    })
+    
+    ColorsTab:CreateColorPicker({
+        Name = "View Angle Color",
+        Color = Config.ViewAngle.Color,
+        Callback = function(value)
+            Config.ViewAngle.Color = value
+        end,
+    })
+    
+    -- ═══════════════════════════════════════════════════════════
+    --  SETTINGS TAB
+    -- ═══════════════════════════════════════════════════════════
+    
+    local PerformanceSection = SettingsTab:CreateSection("Performance")
+    
+    SettingsTab:CreateSlider({
+        Name = "Update Rate (FPS)",
+        Range = {30, 120},
+        Increment = 10,
+        CurrentValue = Config.UpdateRate,
+        Callback = function(value)
+            Config.UpdateRate = value
+        end,
+    })
+    
+    SettingsTab:CreateToggle({
+        Name = "Fade with Distance",
+        CurrentValue = Config.FadeWithDistance,
+        Callback = function(value)
+            Config.FadeWithDistance = value
+        end,
+    })
+    
+    local TextSection = SettingsTab:CreateSection("Text Settings")
+    
+    SettingsTab:CreateSlider({
+        Name = "Base Text Size",
+        Range = {10, 24},
+        Increment = 1,
+        CurrentValue = Config.Text.Size,
+        Callback = function(value)
+            Config.Text.Size = value
+        end,
+    })
+    
+    SettingsTab:CreateToggle({
+        Name = "Text Outline",
+        CurrentValue = Config.Text.Outline,
+        Callback = function(value)
+            Config.Text.Outline = value
+        end,
+    })
+    
+    SettingsTab:CreateDropdown({
+        Name = "Text Font",
+        Options = {"UI", "System", "Plex", "Monospace"},
+        CurrentOption = {"UI", "System", "Plex", "Monospace"}[Config.Text.Font] or "Plex",
+        Callback = function(value)
+            local fonts = {UI = 0, System = 1, Plex = 2, Monospace = 3}
+            Config.Text.Font = fonts[value] or 2
+        end,
+    })
+    
+    local ControlSection = SettingsTab:CreateSection("Controls")
+    
+    SettingsTab:CreateKeybind({
+        Name = "Toggle ESP",
+        CurrentKeybind = Config.ToggleKey.Name,
+        HoldToInteract = false,
+        Callback = function(key)
+            Config.ToggleKey = key
+        end,
+    })
+    
+    SettingsTab:CreateButton({
+        Name = "Enable ESP",
+        Callback = function()
+            State.Enabled = true
+        end,
+    })
+    
+    SettingsTab:CreateButton({
+        Name = "Disable ESP",
+        Callback = function()
+            State.Enabled = false
+            for _, playerData in pairs(ESPData) do
+                if playerData.Objects then
+                    for _, data in ipairs(playerData.Objects) do
+                        ReturnToPool(data.Pool, data.Object)
+                    end
+                end
+            end
+            ESPData = {}
+        end,
+    })
+    
+    Rayfield:LoadConfiguration()
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  CLEANUP
+-- ═══════════════════════════════════════════════════════════════
+
+game:GetService("Players").PlayerRemoving:Connect(function(player)
+    if ESPData[player] then
+        if ESPData[player].Objects then
+            for _, data in ipairs(ESPData[player].Objects) do
+                ReturnToPool(data.Pool, data.Object)
+            end
+        end
+        ESPData[player] = nil
+    end
+end)
+
+print("═══════════════════════════════════════════════════════════")
+print("  Premium ESP v4.0 - Loaded Successfully")
+print("  Press", Config.ToggleKey.Name, "to toggle ESP")
+print("═══════════════════════════════════════════════════════════")
