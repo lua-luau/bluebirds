@@ -1,802 +1,624 @@
+-- ═══════════════════════════════════════════════════════════════
+--  Premium ESP System v4.0 - Polished Edition
+--  High-performance, feature-rich ESP with smooth animations
+-- ═══════════════════════════════════════════════════════════════
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
+-- ═══════════════════════════════════════════════════════════════
+--  CONFIGURATION
+-- ═══════════════════════════════════════════════════════════════
+
 local Config = {
-    ShowSkeleton = true,
-    ShowName = true,
-    ShowDistance = true,
-    ShowHealthBar = true,
-    ShowBox = false,
-    ShowTracers = false,
-    ShowWeapon = false,
-    ShowViewAngle = false,
-    Rainbow = false,
+    -- Visual Elements
+    Skeleton = {
+        Enabled = true,
+        Thickness = 2,
+        Color = Color3.fromRGB(0, 255, 255),
+        Transparency = 0.9,
+    },
+    
+    Box = {
+        Enabled = false,
+        Thickness = 2,
+        Color = Color3.fromRGB(255, 255, 255),
+        Transparency = 0.8,
+        Filled = false,
+        FilledTransparency = 0.1,
+    },
+    
+    Tracers = {
+        Enabled = false,
+        Thickness = 1.5,
+        Color = Color3.fromRGB(255, 255, 0),
+        Transparency = 0.7,
+        Origin = "Bottom", -- Top, Middle, Bottom
+    },
+    
+    HealthBar = {
+        Enabled = true,
+        Width = 3,
+        Height = 0, -- Auto-calculated
+        Outline = true,
+        GradientEnabled = true,
+    },
+    
+    Text = {
+        Name = {Enabled = true, Color = Color3.fromRGB(255, 255, 255)},
+        Distance = {Enabled = true, Color = Color3.fromRGB(200, 200, 200)},
+        Health = {Enabled = true, Color = Color3.fromRGB(255, 255, 255)},
+        Weapon = {Enabled = false, Color = Color3.fromRGB(255, 200, 0)},
+        Size = 14,
+        Font = 2, -- UI, System, Plex, Monospace
+        Outline = true,
+        ScaleWithDistance = true,
+    },
+    
+    ViewAngle = {
+        Enabled = false,
+        Length = 6,
+        Thickness = 2,
+        Color = Color3.fromRGB(255, 0, 0),
+    },
+    
+    -- Advanced Features
+    Chams = {
+        Enabled = false,
+        Transparency = 0.5,
+        AlwaysOnTop = true,
+        TeamColor = true,
+    },
+    
+    Snaplines = {
+        Enabled = false,
+        ToHead = true,
+        Thickness = 1,
+    },
+    
+    -- Filters
     TeamCheck = true,
     HealthCheck = true,
-    DistanceCheck = false,
+    VisibilityCheck = false,
     MaxDistance = 500,
-    SkeletonColor = Color3.fromRGB(0, 255, 255),
-    BoxColor = Color3.fromRGB(255, 255, 255),
-    TracerColor = Color3.fromRGB(255, 255, 0),
-    SkeletonThickness = 2,
-    BoxThickness = 2,
-    TracerThickness = 2,
-    TextSize = 14,
-    MinTextSize = 8,
-    MaxTextSize = 20,
-    TracerOrigin = "Bottom",
+    MinDistance = 0,
+    
+    -- Visual Effects
+    Rainbow = {
+        Enabled = false,
+        Speed = 2, -- Lower = slower
+    },
+    
+    FadeWithDistance = true,
+    SmoothUpdates = true,
+    UpdateRate = 60, -- FPS cap for ESP updates
+    
+    -- Performance
+    UseOcclusionCulling = true,
+    MaxVisiblePlayers = 20,
+    
+    -- Hotkeys
+    ToggleKey = Enum.KeyCode.Insert,
 }
 
+-- ═══════════════════════════════════════════════════════════════
+--  STATE MANAGEMENT
+-- ═══════════════════════════════════════════════════════════════
+
 local ESPData = {}
-local DrawingPools = {Lines = {}, Texts = {}}
-local Connections = {}
-local IsRunning = true
+local ObjectPools = {
+    Lines = {},
+    Texts = {},
+    Quads = {},
+}
 
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-local Window = Rayfield:CreateWindow({
-    Name = "🎯 Advanced ESP Hub",
-    LoadingTitle = "ESP Script v2.0",
-    LoadingSubtitle = "Optimized Edition",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "AdvancedESP",
-        FileName = "Config"
-    },
-})
+local State = {
+    Enabled = true,
+    LastUpdate = 0,
+    FrameCount = 0,
+    RainbowHue = 0,
+}
 
-local VisualsTab = Window:CreateTab("Visuals", 4483362458)
-local FiltersTab = Window:CreateTab("Filters", 4483362458)
-local SettingsTab = Window:CreateTab("Settings", 4483362458)
-local ColorsTab = Window:CreateTab("Colors", 4483362458)
-local MiscTab = Window:CreateTab("Misc", 4483362458)
+-- ═══════════════════════════════════════════════════════════════
+--  UTILITY FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════
 
-local VisualSection = VisualsTab:CreateSection("ESP Elements")
-
-VisualsTab:CreateToggle({
-    Name = "Skeleton ESP",
-    CurrentValue = Config.ShowSkeleton,
-    Callback = function(v) Config.ShowSkeleton = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Box ESP",
-    CurrentValue = Config.ShowBox,
-    Callback = function(v) Config.ShowBox = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Tracers",
-    CurrentValue = Config.ShowTracers,
-    Callback = function(v) Config.ShowTracers = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "View Angle Lines",
-    CurrentValue = Config.ShowViewAngle,
-    Callback = function(v) Config.ShowViewAngle = v end,
-})
-
-local InfoSection = VisualsTab:CreateSection("Information Display")
-
-VisualsTab:CreateToggle({
-    Name = "Player Names",
-    CurrentValue = Config.ShowName,
-    Callback = function(v) Config.ShowName = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Distance",
-    CurrentValue = Config.ShowDistance,
-    Callback = function(v) Config.ShowDistance = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Health Bar",
-    CurrentValue = Config.ShowHealthBar,
-    Callback = function(v) Config.ShowHealthBar = v end,
-})
-
-VisualsTab:CreateToggle({
-    Name = "Weapon Display",
-    CurrentValue = Config.ShowWeapon,
-    Callback = function(v) Config.ShowWeapon = v end,
-})
-
-local FilterSection = FiltersTab:CreateSection("Target Filters")
-
-FiltersTab:CreateToggle({
-    Name = "Team Check",
-    CurrentValue = Config.TeamCheck,
-    Callback = function(v) Config.TeamCheck = v end,
-})
-
-FiltersTab:CreateToggle({
-    Name = "Health Check (Hide Dead)",
-    CurrentValue = Config.HealthCheck,
-    Callback = function(v) Config.HealthCheck = v end,
-})
-
-FiltersTab:CreateToggle({
-    Name = "Distance Check",
-    CurrentValue = Config.DistanceCheck,
-    Callback = function(v) Config.DistanceCheck = v end,
-})
-
-FiltersTab:CreateSlider({
-    Name = "Max Distance (studs)",
-    Range = {100, 2000},
-    Increment = 50,
-    CurrentValue = Config.MaxDistance,
-    Callback = function(v) Config.MaxDistance = v end,
-})
-
-local AppearanceSection = SettingsTab:CreateSection("Appearance Settings")
-
-SettingsTab:CreateSlider({
-    Name = "Base Text Size",
-    Range = {10, 24},
-    Increment = 1,
-    CurrentValue = Config.TextSize,
-    Callback = function(v) Config.TextSize = v end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Min Text Size (Far)",
-    Range = {6, 14},
-    Increment = 1,
-    CurrentValue = Config.MinTextSize,
-    Callback = function(v) Config.MinTextSize = v end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Max Text Size (Close)",
-    Range = {14, 28},
-    Increment = 1,
-    CurrentValue = Config.MaxTextSize,
-    Callback = function(v) Config.MaxTextSize = v end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Skeleton Thickness",
-    Range = {1, 6},
-    Increment = 1,
-    CurrentValue = Config.SkeletonThickness,
-    Callback = function(v) Config.SkeletonThickness = v end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Box Thickness",
-    Range = {1, 6},
-    Increment = 1,
-    CurrentValue = Config.BoxThickness,
-    Callback = function(v) Config.BoxThickness = v end,
-})
-
-SettingsTab:CreateSlider({
-    Name = "Tracer Thickness",
-    Range = {1, 6},
-    Increment = 1,
-    CurrentValue = Config.TracerThickness,
-    Callback = function(v) Config.TracerThickness = v end,
-})
-
-SettingsTab:CreateDropdown({
-    Name = "Tracer Origin",
-    Options = {"Top", "Middle", "Bottom"},
-    CurrentOption = Config.TracerOrigin,
-    Callback = function(v) Config.TracerOrigin = v end,
-})
-
-local ColorSection = ColorsTab:CreateSection("Color Customization")
-
-ColorsTab:CreateToggle({
-    Name = "Rainbow Mode",
-    CurrentValue = Config.Rainbow,
-    Callback = function(v) Config.Rainbow = v end,
-})
-
-ColorsTab:CreateColorPicker({
-    Name = "Skeleton Color",
-    Color = Config.SkeletonColor,
-    Callback = function(v) Config.SkeletonColor = v end,
-})
-
-ColorsTab:CreateColorPicker({
-    Name = "Box Color",
-    Color = Config.BoxColor,
-    Callback = function(v) Config.BoxColor = v end,
-})
-
-ColorsTab:CreateColorPicker({
-    Name = "Tracer Color",
-    Color = Config.TracerColor,
-    Callback = function(v) Config.TracerColor = v end,
-})
-
-local function CreateLine()
-    local line = Drawing.new("Line")
-    line.Thickness = 1
-    line.Transparency = 1
-    line.Visible = false
-    return line
+local function Lerp(a, b, t)
+    return a + (b - a) * t
 end
 
-local function CreateText()
-    local text = Drawing.new("Text")
-    text.Size = 14
-    text.Center = true
-    text.Outline = true
-    text.Font = 2
-    text.Color = Color3.new(1, 1, 1)
-    text.Visible = false
-    return text
+local function GetRainbowColor()
+    return Color3.fromHSV(State.RainbowHue, 1, 1)
 end
 
-local function GetLine()
-    return table.remove(DrawingPools.Lines) or CreateLine()
+local function GetDistanceColor(distance)
+    local normalized = math.clamp(distance / Config.MaxDistance, 0, 1)
+    return Color3.fromRGB(
+        math.floor(normalized * 255),
+        math.floor((1 - normalized) * 255),
+        0
+    )
 end
 
-local function GetText()
-    return table.remove(DrawingPools.Texts) or CreateText()
+local function GetHealthColor(healthPercent)
+    local r = math.clamp(255 - healthPercent * 2.55, 0, 255)
+    local g = math.clamp(healthPercent * 2.55, 0, 255)
+    return Color3.fromRGB(r, g, 0)
 end
 
-local function ReturnLine(line)
-    line.Visible = false
-    table.insert(DrawingPools.Lines, line)
+local function WorldToScreen(position)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(position)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen, screenPos.Z
 end
 
-local function ReturnText(text)
-    text.Visible = false
-    table.insert(DrawingPools.Texts, text)
+local function IsPositionVisible(position)
+    if not Config.VisibilityCheck then return true end
+    
+    local origin = Camera.CFrame.Position
+    local direction = (position - origin).Unit * (position - origin).Magnitude
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    return not result or result.Instance:IsDescendantOf(Players:GetPlayerFromCharacter(result.Instance.Parent) and result.Instance.Parent)
 end
 
-local function CreateBox()
-    local box = {}
-    for i = 1, 4 do
-        table.insert(box, GetLine())
+-- ═══════════════════════════════════════════════════════════════
+--  OBJECT POOLING
+-- ═══════════════════════════════════════════════════════════════
+
+local DrawingConstructors = {
+    Line = function()
+        local line = Drawing.new("Line")
+        line.Thickness = 1
+        line.Transparency = 1
+        line.Visible = false
+        return line
+    end,
+    
+    Text = function()
+        local text = Drawing.new("Text")
+        text.Center = true
+        text.Outline = true
+        text.Font = Config.Text.Font
+        text.Size = Config.Text.Size
+        text.Visible = false
+        return text
+    end,
+    
+    Quad = function()
+        local quad = Drawing.new("Quad")
+        quad.Thickness = 1
+        quad.Transparency = 1
+        quad.Visible = false
+        quad.Filled = false
+        return quad
+    end,
+}
+
+local function GetFromPool(poolName, drawingType)
+    local pool = ObjectPools[poolName]
+    if #pool > 0 then
+        return table.remove(pool)
     end
-    return box
+    return DrawingConstructors[drawingType]()
 end
 
-local function RemoveBox(box)
-    if not box then return end
-    for _, line in ipairs(box) do
-        ReturnLine(line)
-    end
+local function ReturnToPool(poolName, object)
+    if not object then return end
+    object.Visible = false
+    table.insert(ObjectPools[poolName], object)
 end
+
+local function CreateDrawing(drawingType, poolName)
+    return GetFromPool(poolName, drawingType)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  CHARACTER UTILITIES
+-- ═══════════════════════════════════════════════════════════════
 
 local function GetCharacterParts(character)
     if not character then return nil end
     
     local parts = {
         Head = character:FindFirstChild("Head"),
-        UpperTorso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"),
-        LeftUpperArm = character:FindFirstChild("LeftUpperArm") or character:FindFirstChild("Left Arm"),
-        RightUpperArm = character:FindFirstChild("RightUpperArm") or character:FindFirstChild("Right Arm"),
-        LeftUpperLeg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg"),
-        RightUpperLeg = character:FindFirstChild("RightUpperLeg") or character:FindFirstChild("Right Leg"),
-        HumanoidRootPart = character:FindFirstChild("HumanoidRootPart"),
+        Torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"),
+        LeftArm = character:FindFirstChild("LeftUpperArm") or character:FindFirstChild("Left Arm"),
+        RightArm = character:FindFirstChild("RightUpperArm") or character:FindFirstChild("Right Arm"),
+        LeftLeg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg"),
+        RightLeg = character:FindFirstChild("RightUpperLeg") or character:FindFirstChild("Right Leg"),
+        Root = character:FindFirstChild("HumanoidRootPart"),
+        
+        -- R15 Specific
+        LeftLowerArm = character:FindFirstChild("LeftLowerArm"),
+        RightLowerArm = character:FindFirstChild("RightLowerArm"),
+        LeftLowerLeg = character:FindFirstChild("LeftLowerLeg"),
+        RightLowerLeg = character:FindFirstChild("RightLowerLeg"),
+        LowerTorso = character:FindFirstChild("LowerTorso"),
     }
     
-    for k, part in pairs(parts) do
-        if not part then return nil end
+    -- Validate essential parts
+    if not (parts.Head and parts.Torso and parts.Root) then
+        return nil
     end
     
     return parts
 end
 
-local function GetEquippedTool(character)
-    local tool = character:FindFirstChildOfClass("Tool")
-    return tool and tool.Name or "None"
+local function GetCharacterBounds(parts)
+    local positions = {}
+    for _, part in pairs(parts) do
+        if part and part:IsA("BasePart") then
+            table.insert(positions, part.Position)
+        end
+    end
+    
+    if #positions == 0 then return nil end
+    
+    local minX, minY, minZ = math.huge, math.huge, math.huge
+    local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
+    
+    for _, pos in ipairs(positions) do
+        minX = math.min(minX, pos.X)
+        minY = math.min(minY, pos.Y)
+        minZ = math.min(minZ, pos.Z)
+        maxX = math.max(maxX, pos.X)
+        maxY = math.max(maxY, pos.Y)
+        maxZ = math.max(maxZ, pos.Z)
+    end
+    
+    return {
+        Min = Vector3.new(minX, minY, minZ),
+        Max = Vector3.new(maxX, maxY, maxZ),
+        Center = Vector3.new((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2),
+    }
 end
 
-local function IsValidTarget(player)
+local function ShouldShowPlayer(player, distance)
     if player == LocalPlayer then return false end
-    
-    local character = player.Character
-    if not character then return false end
+    if not player.Character then return false end
     
     if Config.TeamCheck and player.Team == LocalPlayer.Team then
         return false
     end
     
     if Config.HealthCheck then
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
         if not humanoid or humanoid.Health <= 0 then
             return false
         end
     end
     
-    if Config.DistanceCheck then
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
-            if dist > Config.MaxDistance then
-                return false
-            end
+    if distance then
+        if distance > Config.MaxDistance or distance < Config.MinDistance then
+            return false
         end
     end
     
     return true
 end
 
-local function CreateESP(player)
-    if ESPData[player] then return end
+-- ═══════════════════════════════════════════════════════════════
+--  DRAWING FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════
+
+local function DrawSkeleton(parts, distance, drawnObjects)
+    if not Config.Skeleton.Enabled then return end
     
-    local data = {
-        Player = player,
-        Skeleton = {},
-        Box = nil,
-        Tracer = nil,
-        ViewAngle = nil,
-        NameText = GetText(),
-        DistanceText = GetText(),
-        HealthText = GetText(),
-        WeaponText = GetText(),
-        Connections = {},
+    local skeletonPairs = {
+        -- Torso to extremities
+        {parts.Head, parts.Torso},
+        {parts.Torso, parts.LeftArm},
+        {parts.Torso, parts.RightArm},
+        
+        -- R15 Arms
+        {parts.LeftArm, parts.LeftLowerArm},
+        {parts.RightArm, parts.RightLowerArm},
+        
+        -- Legs
+        {parts.Torso, parts.LowerTorso or parts.LeftLeg},
+        {parts.LowerTorso or parts.Torso, parts.LeftLeg},
+        {parts.LowerTorso or parts.Torso, parts.RightLeg},
+        
+        -- R15 Legs
+        {parts.LeftLeg, parts.LeftLowerLeg},
+        {parts.RightLeg, parts.RightLowerLeg},
     }
     
-    ESPData[player] = data
+    local color = Config.Rainbow.Enabled and GetRainbowColor() or Config.Skeleton.Color
+    local transparency = Config.Skeleton.Transparency
     
-    table.insert(data.Connections, player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        RemoveESP(player)
-        CreateESP(player)
-    end))
+    if Config.FadeWithDistance then
+        local fadeFactor = 1 - math.clamp(distance / Config.MaxDistance, 0, 1)
+        transparency = transparency * fadeFactor
+    end
     
-    local character = player.Character
-    if character then
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            table.insert(data.Connections, humanoid.Died:Connect(function()
-                RemoveESP(player)
-            end))
+    for _, pair in ipairs(skeletonPairs) do
+        if not (pair[1] and pair[2]) then continue end
+        
+        local pos1, vis1 = WorldToScreen(pair[1].Position)
+        local pos2, vis2 = WorldToScreen(pair[2].Position)
+        
+        if vis1 and vis2 then
+            local line = CreateDrawing("Line", "Lines")
+            line.From = pos1
+            line.To = pos2
+            line.Color = color
+            line.Thickness = Config.Skeleton.Thickness
+            line.Transparency = transparency
+            line.Visible = true
+            table.insert(drawnObjects, {Object = line, Pool = "Lines"})
         end
     end
 end
 
-function RemoveESP(player)
-    local data = ESPData[player]
-    if not data then return end
+local function DrawBox(parts, distance, drawnObjects)
+    if not Config.Box.Enabled then return end
     
-    for _, conn in ipairs(data.Connections) do
-        if conn.Connected then
-            conn:Disconnect()
-        end
-    end
+    local bounds = GetCharacterBounds(parts)
+    if not bounds then return end
     
-    for _, lineData in ipairs(data.Skeleton) do
-        ReturnLine(lineData.Line)
-    end
-    
-    if data.Box then RemoveBox(data.Box) end
-    if data.Tracer then ReturnLine(data.Tracer) end
-    if data.ViewAngle then ReturnLine(data.ViewAngle) end
-    
-    ReturnText(data.NameText)
-    ReturnText(data.DistanceText)
-    ReturnText(data.HealthText)
-    ReturnText(data.WeaponText)
-    
-    ESPData[player] = nil
-end
-
-local function UpdateSkeleton(player, data)
-    if not Config.ShowSkeleton then
-        for _, lineData in ipairs(data.Skeleton) do
-            lineData.Line.Visible = false
-        end
-        return
-    end
-    
-    local character = player.Character
-    if not character then return end
-    
-    local parts = GetCharacterParts(character)
-    if not parts then return end
-    
-    if #data.Skeleton == 0 then
-        local skeletonPairs = {
-            {parts.Head, parts.UpperTorso},
-            {parts.UpperTorso, parts.LeftUpperArm},
-            {parts.UpperTorso, parts.RightUpperArm},
-            {parts.UpperTorso, parts.LeftUpperLeg},
-            {parts.UpperTorso, parts.RightUpperLeg},
-        }
-        
-        for _, pair in ipairs(skeletonPairs) do
-            table.insert(data.Skeleton, {
-                Part1 = pair[1],
-                Part2 = pair[2],
-                Line = GetLine(),
-            })
-        end
-    end
-    
-    local color = Config.Rainbow and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Config.SkeletonColor
-    
-    for _, lineData in ipairs(data.Skeleton) do
-        local part1, part2 = lineData.Part1, lineData.Part2
-        
-        if not (part1 and part2 and part1.Parent and part2.Parent) then
-            lineData.Line.Visible = false
-            continue
-        end
-        
-        local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
-        local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
-        
-        if onScreen1 and onScreen2 then
-            lineData.Line.From = Vector2.new(pos1.X, pos1.Y)
-            lineData.Line.To = Vector2.new(pos2.X, pos2.Y)
-            lineData.Line.Color = color
-            lineData.Line.Thickness = Config.SkeletonThickness
-            lineData.Line.Visible = true
-        else
-            lineData.Line.Visible = false
-        end
-    end
-end
-
-local function UpdateBox(player, data)
-    if not Config.ShowBox then
-        if data.Box then
-            for _, line in ipairs(data.Box) do
-                line.Visible = false
-            end
-        end
-        return
-    end
-    
-    local character = player.Character
-    if not character then
-        if data.Box then
-            for _, line in ipairs(data.Box) do
-                line.Visible = false
-            end
-        end
-        return
-    end
-    
-    if not data.Box then
-        data.Box = CreateBox()
-    end
-    
-    local parts = GetCharacterParts(character)
-    if not parts then
-        if data.Box then
-            for _, line in ipairs(data.Box) do
-                line.Visible = false
-            end
-        end
-        return
-    end
-    
-    local head = parts.Head
-    local torso = parts.UpperTorso
-    local leftLeg = parts.LeftUpperLeg
-    local rightLeg = parts.RightUpperLeg
-    
-    local topY = head.Position.Y + (head.Size.Y / 2)
-    local bottomY = math.min(leftLeg.Position.Y - (leftLeg.Size.Y / 2), rightLeg.Position.Y - (rightLeg.Size.Y / 2))
-    local centerX = torso.Position.X
-    local centerZ = torso.Position.Z
-    local width = torso.Size.X * 1.5
-    
+    local size = bounds.Max - bounds.Min
     local corners = {
-        Vector3.new(centerX - width/2, topY, centerZ),
-        Vector3.new(centerX + width/2, topY, centerZ),
-        Vector3.new(centerX + width/2, bottomY, centerZ),
-        Vector3.new(centerX - width/2, bottomY, centerZ),
+        bounds.Min,
+        bounds.Min + Vector3.new(size.X, 0, 0),
+        bounds.Min + Vector3.new(size.X, 0, size.Z),
+        bounds.Min + Vector3.new(0, 0, size.Z),
+        bounds.Max,
+        bounds.Max - Vector3.new(size.X, 0, 0),
+        bounds.Max - Vector3.new(size.X, 0, size.Z),
+        bounds.Max - Vector3.new(0, 0, size.Z),
     }
     
     local screenCorners = {}
-    local allVisible = true
-    
     for _, corner in ipairs(corners) do
-        local pos, visible = Camera:WorldToViewportPoint(corner)
-        table.insert(screenCorners, Vector2.new(pos.X, pos.Y))
-        if not visible then allVisible = false end
+        local pos, vis = WorldToScreen(corner)
+        if not vis then return end
+        table.insert(screenCorners, pos)
     end
     
-    if allVisible then
-        local color = Config.Rainbow and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Config.BoxColor
-        for i = 1, 4 do
-            local line = data.Box[i]
-            line.From = screenCorners[i]
-            line.To = screenCorners[i % 4 + 1]
-            line.Color = color
-            line.Thickness = Config.BoxThickness
-            line.Visible = true
-        end
-    else
-        for _, line in ipairs(data.Box) do
-            line.Visible = false
-        end
+    -- Calculate 2D bounding box
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    
+    for _, corner in ipairs(screenCorners) do
+        minX = math.min(minX, corner.X)
+        minY = math.min(minY, corner.Y)
+        maxX = math.max(maxX, corner.X)
+        maxY = math.max(maxY, corner.Y)
     end
+    
+    local boxCorners = {
+        Vector2.new(minX, minY),
+        Vector2.new(maxX, minY),
+        Vector2.new(maxX, maxY),
+        Vector2.new(minX, maxY),
+    }
+    
+    local color = Config.Rainbow.Enabled and GetRainbowColor() or Config.Box.Color
+    local transparency = Config.Box.Transparency
+    
+    if Config.FadeWithDistance then
+        local fadeFactor = 1 - math.clamp(distance / Config.MaxDistance, 0, 1)
+        transparency = transparency * fadeFactor
+    end
+    
+    -- Draw box lines
+    for i = 1, 4 do
+        local line = CreateDrawing("Line", "Lines")
+        line.From = boxCorners[i]
+        line.To = boxCorners[i % 4 + 1]
+        line.Color = color
+        line.Thickness = Config.Box.Thickness
+        line.Transparency = transparency
+        line.Visible = true
+        table.insert(drawnObjects, {Object = line, Pool = "Lines"})
+    end
+    
+    -- Draw filled box
+    if Config.Box.Filled then
+        local quad = CreateDrawing("Quad", "Quads")
+        quad.PointA = boxCorners[1]
+        quad.PointB = boxCorners[2]
+        quad.PointC = boxCorners[3]
+        quad.PointD = boxCorners[4]
+        quad.Color = color
+        quad.Transparency = Config.Box.FilledTransparency
+        quad.Filled = true
+        quad.Visible = true
+        table.insert(drawnObjects, {Object = quad, Pool = "Quads"})
+    end
+    
+    return boxCorners
 end
 
-local function UpdateTracer(player, data)
-    if not Config.ShowTracers then
-        if data.Tracer then data.Tracer.Visible = false end
-        return
-    end
+local function DrawHealthBar(parts, boxCorners, humanoid, drawnObjects)
+    if not Config.HealthBar.Enabled or not humanoid then return end
+    if not boxCorners then return end
     
-    local character = player.Character
-    if not character then
-        if data.Tracer then data.Tracer.Visible = false end
-        return
-    end
+    local healthPercent = humanoid.Health / humanoid.MaxHealth
+    local barHeight = boxCorners[3].Y - boxCorners[1].Y
+    local barX = boxCorners[1].X - 7
     
-    if not data.Tracer then
-        data.Tracer = GetLine()
-    end
+    -- Background
+    local bgLine = CreateDrawing("Line", "Lines")
+    bgLine.From = Vector2.new(barX, boxCorners[1].Y)
+    bgLine.To = Vector2.new(barX, boxCorners[3].Y)
+    bgLine.Color = Color3.fromRGB(0, 0, 0)
+    bgLine.Thickness = Config.HealthBar.Width + 2
+    bgLine.Transparency = 0.8
+    bgLine.Visible = true
+    table.insert(drawnObjects, {Object = bgLine, Pool = "Lines"})
     
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        data.Tracer.Visible = false
-        return
-    end
-    
-    local pos, visible = Camera:WorldToViewportPoint(hrp.Position)
-    if visible then
-        local screenSize = Camera.ViewportSize
-        local origin
-        if Config.TracerOrigin == "Top" then
-            origin = Vector2.new(screenSize.X / 2, 0)
-        elseif Config.TracerOrigin == "Middle" then
-            origin = Vector2.new(screenSize.X / 2, screenSize.Y / 2)
-        else
-            origin = Vector2.new(screenSize.X / 2, screenSize.Y)
-        end
-        
-        local color = Config.Rainbow and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Config.TracerColor
-        data.Tracer.From = origin
-        data.Tracer.To = Vector2.new(pos.X, pos.Y)
-        data.Tracer.Color = color
-        data.Tracer.Thickness = Config.TracerThickness
-        data.Tracer.Visible = true
-    else
-        data.Tracer.Visible = false
-    end
+    -- Health bar
+    local healthLine = CreateDrawing("Line", "Lines")
+    local healthBarHeight = barHeight * healthPercent
+    healthLine.From = Vector2.new(barX, boxCorners[3].Y)
+    healthLine.To = Vector2.new(barX, boxCorners[3].Y - healthBarHeight)
+    healthLine.Color = Config.HealthBar.GradientEnabled and GetHealthColor(healthPercent * 100) or Color3.fromRGB(0, 255, 0)
+    healthLine.Thickness = Config.HealthBar.Width
+    healthLine.Transparency = 1
+    healthLine.Visible = true
+    table.insert(drawnObjects, {Object = healthLine, Pool = "Lines"})
 end
 
-local function UpdateViewAngle(player, data)
-    if not Config.ShowViewAngle then
-        if data.ViewAngle then data.ViewAngle.Visible = false end
-        return
+local function DrawTracers(root, distance, drawnObjects)
+    if not Config.Tracers.Enabled then return end
+    
+    local pos, vis = WorldToScreen(root.Position)
+    if not vis then return end
+    
+    local screenSize = Camera.ViewportSize
+    local origin
+    
+    if Config.Tracers.Origin == "Top" then
+        origin = Vector2.new(screenSize.X / 2, 0)
+    elseif Config.Tracers.Origin == "Middle" then
+        origin = Vector2.new(screenSize.X / 2, screenSize.Y / 2)
+    else
+        origin = Vector2.new(screenSize.X / 2, screenSize.Y)
     end
     
-    local character = player.Character
-    if not character then
-        if data.ViewAngle then data.ViewAngle.Visible = false end
-        return
+    local color = Config.Rainbow.Enabled and GetRainbowColor() or Config.Tracers.Color
+    local transparency = Config.Tracers.Transparency
+    
+    if Config.FadeWithDistance then
+        local fadeFactor = 1 - math.clamp(distance / Config.MaxDistance, 0, 1)
+        transparency = transparency * fadeFactor
     end
     
-    if not data.ViewAngle then
-        data.ViewAngle = GetLine()
-    end
+    local line = CreateDrawing("Line", "Lines")
+    line.From = origin
+    line.To = pos
+    line.Color = color
+    line.Thickness = Config.Tracers.Thickness
+    line.Transparency = transparency
+    line.Visible = true
+    table.insert(drawnObjects, {Object = line, Pool = "Lines"})
+end
+
+local function DrawViewAngle(root, drawnObjects)
+    if not Config.ViewAngle.Enabled then return end
     
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        data.ViewAngle.Visible = false
-        return
-    end
+    local lookVector = root.CFrame.LookVector * Config.ViewAngle.Length
+    local endPos = root.Position + lookVector
     
-    local lookVector = hrp.CFrame.LookVector * 5
-    local endPos = hrp.Position + lookVector
-    
-    local pos1, vis1 = Camera:WorldToViewportPoint(hrp.Position)
-    local pos2, vis2 = Camera:WorldToViewportPoint(endPos)
+    local pos1, vis1 = WorldToScreen(root.Position)
+    local pos2, vis2 = WorldToScreen(endPos)
     
     if vis1 and vis2 then
-        local color = Config.Rainbow and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Color3.fromRGB(255, 255, 0)
-        data.ViewAngle.From = Vector2.new(pos1.X, pos1.Y)
-        data.ViewAngle.To = Vector2.new(pos2.X, pos2.Y)
-        data.ViewAngle.Color = color
-        data.ViewAngle.Thickness = 2
-        data.ViewAngle.Visible = true
-    else
-        data.ViewAngle.Visible = false
+        local line = CreateDrawing("Line", "Lines")
+        line.From = pos1
+        line.To = pos2
+        line.Color = Config.ViewAngle.Color
+        line.Thickness = Config.ViewAngle.Thickness
+        line.Transparency = 1
+        line.Visible = true
+        table.insert(drawnObjects, {Object = line, Pool = "Lines"})
     end
 end
 
-local function UpdateText(player, data)
-    local character = player.Character
-    if not character then
-        data.NameText.Visible = false
-        data.DistanceText.Visible = false
-        data.HealthText.Visible = false
-        data.WeaponText.Visible = false
-        return
-    end
-    
-    local head = character:FindFirstChild("Head")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not head then
-        data.NameText.Visible = false
-        data.DistanceText.Visible = false
-        data.HealthText.Visible = false
-        data.WeaponText.Visible = false
-        return
-    end
-    
-    local distance = (head.Position - Camera.CFrame.Position).Magnitude
+local function DrawInformation(player, parts, distance, humanoid, drawnObjects)
+    local head = parts.Head
     local headTop = head.Position + Vector3.new(0, head.Size.Y / 2, 0)
-    local headPos, onScreen = Camera:WorldToViewportPoint(headTop)
+    local headPos, vis = WorldToScreen(headTop)
     
-    if not onScreen then
-        data.NameText.Visible = false
-        data.DistanceText.Visible = false
-        data.HealthText.Visible = false
-        data.WeaponText.Visible = false
-        return
+    if not vis then return end
+    
+    local textSize = Config.Text.Size
+    if Config.Text.ScaleWithDistance then
+        local scaleFactor = math.clamp(1 - (distance / Config.MaxDistance), 0.4, 1)
+        textSize = math.floor(10 + (20 - 10) * scaleFactor)
     end
-    
-    local scaleFactor = math.clamp(1 - (distance / Config.MaxDistance), 0.3, 1)
-    local dynamicTextSize = math.floor(Config.MinTextSize + (Config.MaxTextSize - Config.MinTextSize) * scaleFactor)
     
     local yOffset = 5
     
-    if Config.ShowName then
-        data.NameText.Text = player.Name
-        data.NameText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
-        data.NameText.Color = player.TeamColor.Color
-        data.NameText.Size = dynamicTextSize
-        data.NameText.Visible = true
-        yOffset = yOffset + dynamicTextSize + 2
-    else
-        data.NameText.Visible = false
+    -- Name
+    if Config.Text.Name.Enabled then
+        local text = CreateDrawing("Text", "Texts")
+        text.Text = player.Name
+        text.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
+        text.Color = player.TeamColor and player.TeamColor.Color or Config.Text.Name.Color
+        text.Size = textSize
+        text.Outline = Config.Text.Outline
+        text.Font = Config.Text.Font
+        text.Transparency = 1
+        text.Visible = true
+        table.insert(drawnObjects, {Object = text, Pool = "Texts"})
+        yOffset = yOffset + textSize + 2
     end
     
-    if Config.ShowDistance then
-        data.DistanceText.Text = string.format("[%d]", math.floor(distance))
-        data.DistanceText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
-        data.DistanceText.Color = Color3.new(0.8, 0.8, 0.8)
-        data.DistanceText.Size = dynamicTextSize
-        data.DistanceText.Visible = true
-        yOffset = yOffset + dynamicTextSize + 2
-    else
-        data.DistanceText.Visible = false
+    -- Distance
+    if Config.Text.Distance.Enabled then
+        local text = CreateDrawing("Text", "Texts")
+        text.Text = string.format("[%dm]", math.floor(distance))
+        text.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
+        text.Color = Config.Text.Distance.Color
+        text.Size = textSize - 2
+        text.Outline = Config.Text.Outline
+        text.Font = Config.Text.Font
+        text.Transparency = 1
+        text.Visible = true
+        table.insert(drawnObjects, {Object = text, Pool = "Texts"})
+        yOffset = yOffset + textSize
     end
     
-    if Config.ShowHealthBar and humanoid then
+    -- Health
+    if Config.Text.Health.Enabled and humanoid then
         local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
-        local healthColor = Color3.fromRGB(
-            math.clamp(255 - (healthPercent * 2.55), 0, 255),
-            math.clamp(healthPercent * 2.55, 0, 255),
-            0
-        )
-        data.HealthText.Text = string.format("HP: %d%%", healthPercent)
-        data.HealthText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
-        data.HealthText.Color = healthColor
-        data.HealthText.Size = dynamicTextSize
-        data.HealthText.Visible = true
-        yOffset = yOffset + dynamicTextSize + 2
-    else
-        data.HealthText.Visible = false
+        local text = CreateDrawing("Text", "Texts")
+        text.Text = string.format("%d HP", math.floor(humanoid.Health))
+        text.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
+        text.Color = GetHealthColor(healthPercent)
+        text.Size = textSize - 2
+        text.Outline = Config.Text.Outline
+        text.Font = Config.Text.Font
+        text.Transparency = 1
+        text.Visible = true
+        table.insert(drawnObjects, {Object = text, Pool = "Texts"})
+        yOffset = yOffset + textSize
     end
     
-    if Config.ShowWeapon then
-        local weapon = GetEquippedTool(character)
-        data.WeaponText.Text = weapon
-        data.WeaponText.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
-        data.WeaponText.Color = Color3.fromRGB(255, 200, 0)
-        data.WeaponText.Size = dynamicTextSize
-        data.WeaponText.Visible = true
-    else
-        data.WeaponText.Visible = false
+    -- Weapon
+    if Config.Text.Weapon.Enabled then
+        local tool = player.Character:FindFirstChildOfClass("Tool")
+        if tool then
+            local text = CreateDrawing("Text", "Texts")
+            text.Text = tool.Name
+            text.Position = Vector2.new(headPos.X, headPos.Y - yOffset)
+            text.Color = Config.Text.Weapon.Color
+            text.Size = textSize - 2
+            text.Outline = Config.Text.Outline
+            text.Font = Config.Text.Font
+            text.Transparency = 1
+            text.Visible = true
+            table.insert(drawnObjects, {Object = text, Pool = "Texts"})
+        end
     end
 end
 
-local lastUpdate = 0
-local updateInterval = 1/60
+-- ═══════════════════════════════════════════════════════════════
+--  MAIN UPDATE LOOP
+-- ═══════════════════════════════════════════════════════════════
 
 local function UpdateESP()
-    local now = tick()
-    if now - lastUpdate < updateInterval then return end
-    lastUpdate = now
+    if not State.Enabled then return end
     
-    for player, data in pairs(ESPData) do
-        if not IsValidTarget(player) then
-            for _, lineData in ipairs(data.Skeleton) do
-                lineData.Line.Visible = false
-            end
-            if data.Box then
-                for _, line in ipairs(data.Box) do
-                    line.Visible = false
-                end
-            end
-            if data.Tracer then data.Tracer.Visible = false end
-            if data.ViewAngle then data.ViewAngle.Visible = false end
-            data.NameText.Visible = false
-            data.DistanceText.Visible = false
-            data.HealthText.Visible = false
-            data.WeaponText.Visible = false
-        else
-            UpdateSkeleton(player, data)
-            UpdateBox(player, data)
-            UpdateTracer(player, data)
-            UpdateViewAngle(player, data)
-            UpdateText(player, data)
-        end
+    -- Frame rate limiting
+    local currentTime = tick()
+    if currentTime - State.LastUpdate < (1 / Config.UpdateRate) then
+        return
     end
-end
-
-local function OnPlayerAdded(player)
-    if player == LocalPlayer then return end
-    task.wait(0.5)
-    CreateESP(player)
-end
-
-local function OnPlayerRemoving(player)
-    RemoveESP(player)
-end
-
-for _, player in ipairs(Players:GetPlayers()) do
-    OnPlayerAdded(player)
-end
-
-table.insert(Connections, Players.PlayerAdded:Connect(OnPlayerAdded))
-table.insert(Connections, Players.PlayerRemoving:Connect(OnPlayerRemoving))
-table.insert(Connections, RunService.RenderStepped:Connect(UpdateESP))
-
-task.spawn(function()
-    while IsRunning do
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and not ESPData[player] then
-                CreateESP(player)
-            end
-        end
-        task.wait(2)
-    end
-end)
-
-local function Unload()
-    IsRunning = false
+    State.LastUpdate = currentTime
+    State.FrameCount = State.FrameCount + 1
     
-    for _, conn in ipairs(Connections) do
-        if conn.Connected then
-            conn:Disconnect()
-        end
-    end
-    
-    for player in pairs(ESPData) do
-        RemoveESP(player)
-    end
-    
-    for _, line in ipairs(DrawingPools.Lines) do
-        pcall(function() line:Remove() end)
-    end
-    
-    for _, text in ipairs(DrawingPools.Texts) do
-        pcall(function() text:Remove() end)
-    end
-    
-    pcall(function() Rayfield:Destroy() end)
-    
-    table.clear(ESPData)
-    table.clear(DrawingPools.Lines)
-    table.clear(DrawingPools.Texts)
-    table.clear(Connections)
-    
-    print("ESP Script Unloaded Successfully")
-end
-
-MiscTab:CreateButton({
-    Name = "🔴 Unload Script",
-    Callback = Unload
-})
-
-MiscTab:CreateButton({
-    Name = "💾 Save Configuration",
-    Callback = function()
-        Rayfield:Notify({
-            Title = "Configuration Saved",
-            Content = "Your ESP settings have been saved!",
-            Duration = 3,
-        })
-    end
-})
+    -- Update rainbow
+    if Config.Rainbow.Enabled then
+      
