@@ -1,128 +1,118 @@
--- Grok's Simple Universal Corner Box ESP (Feb 2026)
--- Toggle: Insert key (default) or change to your pref
--- Super lightweight, Drawing API only, players only
--- Copy-paste into executor (Solara/Delta/Wave/etc.)
+-- Grok's Simple Universal 2D Box ESP (Full Box - Feb 2026 fix)
+-- Toggle: Insert key
+-- Uses Drawing.new("Square") for clean full box around players
+-- Players only, team check optional, auto-hide offscreen/dead
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
-local ESP_ENABLED = true  -- Start on
-local TEAM_CHECK = false  -- Set true to ignore teammates
-local CORNER_SIZE = 12    -- Pixel size of corner lines
-local LINE_THICK = 2      -- Thickness
-local BOX_COLOR = Color3.fromRGB(255, 0, 0)  -- Red, change as needed
-local TRANSPARENCY = 1    -- Full opaque
 
-local espObjects = {}  -- Store per player
+local ESP_ENABLED = true          -- Starts enabled
+local TEAM_CHECK = false          -- true = hide teammates
+local BOX_THICKNESS = 1.5
+local BOX_COLOR = Color3.fromRGB(255, 0, 0)  -- Red
+local BOX_TRANSPARENCY = 1       -- 1 = fully visible
+local FILL_BOX = false            -- true = filled semi-transparent box
 
-local function WorldToScreen(pos)
-    local screen, onScreen = Camera:WorldToScreenPoint(pos)
-    return Vector2.new(screen.X, screen.Y), onScreen
+local espTable = {}  -- player -> {box = Drawing Square}
+
+local function isValidTarget(player)
+    if player == LocalPlayer then return false end
+    if not player.Character then return false end
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end
+    if TEAM_CHECK and player.Team == LocalPlayer.Team then return false end
+    return true
 end
 
-local function addCorner(from, to)
-    return {
-        top_left = {from = from, to = Vector2.new(from.X + CORNER_SIZE, from.Y)},
-        top_right = {from = to, to = Vector2.new(to.X - CORNER_SIZE, to.Y)},
-        bot_left = {from = from, to = Vector2.new(from.X, from.Y + CORNER_SIZE)},
-        bot_right = {from = to, to = Vector2.new(to.X, to.Y - CORNER_SIZE)}
-    }
+local function createESP(player)
+    if espTable[player] then return end
+    
+    local box = Drawing.new("Square")
+    box.Thickness = BOX_THICKNESS
+    box.Color = BOX_COLOR
+    box.Transparency = BOX_TRANSPARENCY
+    box.Filled = FILL_BOX
+    box.Visible = false
+    
+    espTable[player] = {box = box}
 end
 
-local function createEsp(player)
-    if player == LocalPlayer then return end
-    espObjects[player] = {
-        lines = {}
-    }
-end
-
-local function removeEsp(player)
-    if espObjects[player] then
-        for _, lineData in pairs(espObjects[player].lines) do
-            lineData.Visible = false
-            lineData:Remove()
-        end
-        espObjects[player] = nil
+local function removeESP(player)
+    if espTable[player] then
+        espTable[player].box:Remove()
+        espTable[player] = nil
     end
 end
 
-local function updateEsp()
+local function updateESP()
     if not ESP_ENABLED then
-        for player, _ in pairs(espObjects) do
-            removeEsp(player)
+        for _, data in pairs(espTable) do
+            data.box.Visible = false
         end
         return
     end
 
-    for player, esp in pairs(espObjects) do
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
-            if TEAM_CHECK and player.Team == LocalPlayer.Team then
-                for _, lineData in pairs(esp.lines) do
-                    lineData.Visible = false
-                end
+    for player, data in pairs(espTable) do
+        local char = player.Character
+        if isValidTarget(player) and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+            local root = char.HumanoidRootPart
+            local head = char.Head
+            
+            -- Get 3D positions for top/bottom (extended a bit for better fit)
+            local top = head.Position + Vector3.new(0, 1, 0)     -- above head
+            local bottom = root.Position - Vector3.new(0, 3.5, 0) -- below feet approx
+            
+            local topScreen, topVisible = Camera:WorldToViewportPoint(top)
+            local botScreen, botVisible = Camera:WorldToViewportPoint(bottom)
+            
+            if topVisible and botVisible then
+                local sizeY = math.abs(topScreen.Y - botScreen.Y)
+                local sizeX = sizeY * 0.55  -- aspect ratio \~0.55 for humanoids (tweak if needed)
+                
+                local centerX = (topScreen.X + botScreen.X) / 2
+                local centerY = (topScreen.Y + botScreen.Y) / 2
+                
+                data.box.Size = Vector2.new(sizeX, sizeY)
+                data.box.Position = Vector2.new(centerX - sizeX/2, centerY - sizeY/2)
+                data.box.Visible = true
             else
-                local rootPart = player.Character.HumanoidRootPart
-                local head = player.Character:FindFirstChild("Head")
-                if head then
-                    local topPos, topOnScreen = WorldToScreen(head.Position + Vector3.new(0, 0.5, 0))
-                    local botPos, botOnScreen = WorldToScreen(rootPart.Position - Vector3.new(0, 3, 0))
-
-                    if topOnScreen and botOnScreen then
-                        local corners = addCorner(botPos, topPos)
-
-                        local lines = esp.lines
-                        local lineIndex = 1
-
-                        for _, corner in pairs(corners) do
-                            local line = lines[lineIndex]
-                            if not line then
-                                line = Drawing.new("Line")
-                                line.Color = BOX_COLOR
-                                line.Thickness = LINE_THICK
-                                line.Transparency = TRANSPARENCY
-                                lines[lineIndex] = line
-                            end
-                            line.From = corner.from
-                            line.To = corner.to
-                            line.Visible = true
-                            lineIndex += 1
-                        end
-                    else
-                        for _, lineData in pairs(esp.lines) do
-                            lineData.Visible = false
-                        end
-                    end
-                else
-                    for _, lineData in pairs(esp.lines) do
-                        lineData.Visible = false
-                    end
-                end
+                data.box.Visible = false
             end
         else
-            removeEsp(player)
+            data.box.Visible = false
         end
     end
 end
 
--- Init players
-for _, player in pairs(Players:GetPlayers()) do
-    createEsp(player)
+-- Setup existing & new players
+for _, plr in ipairs(Players:GetPlayers()) do
+    createESP(plr)
 end
 
-Players.PlayerAdded:Connect(createEsp)
-Players.PlayerRemoving:Connect(removeEsp)
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
 
--- Toggle on Insert key (change Enum.KeyCode.Insert to your key)
-local UserInputService = game:GetService("UserInputService")
-UserInputService.InputBegan:Connect(function(input)
+-- Toggle with Insert key (change to any Enum.KeyCode you want)
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
     if input.KeyCode == Enum.KeyCode.Insert then
         ESP_ENABLED = not ESP_ENABLED
+        print("ESP Toggled: " .. (ESP_ENABLED and "ON" or "OFF"))
     end
 end)
 
--- Main loop
-RunService.RenderStepped:Connect(updateEsp)
+-- Render loop
+RunService.RenderStepped:Connect(updateESP)
 
-print("Grok Corner ESP loaded! Toggle: Insert | Customize vars above.")
+-- Cleanup on script end (optional but good)
+game:BindToClose(function()
+    for player, _ in pairs(espTable) do
+        removeESP(player)
+    end
+end)
+
+print("Grok Full 2D Box ESP loaded! Toggle with INSERT key. Customize at top.")
