@@ -1,118 +1,143 @@
--- Grok's Simple Universal 2D Box ESP (Full Box - Feb 2026 fix)
--- Toggle: Insert key
--- Uses Drawing.new("Square") for clean full box around players
--- Players only, team check optional, auto-hide offscreen/dead
+-- Grok's Clean Universal 2D Box ESP (Full Rectangle Box - Redone from Scratch)
+-- Features: Toggleable (Insert key), Players only, Team check optional
+-- Uses single Drawing Square per player for full box
+-- Fixed sizing with better head/feet extension + aspect ratio
+-- Hides properly when offscreen / dead / invalid
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
+local Workspace = game:GetService("Workspace")
 
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-local ESP_ENABLED = true          -- Starts enabled
-local TEAM_CHECK = false          -- true = hide teammates
-local BOX_THICKNESS = 1.5
+-- Config (customize here)
+local ESP_ENABLED = true
+local TEAM_CHECK = false          -- true to hide teammates
 local BOX_COLOR = Color3.fromRGB(255, 0, 0)  -- Red
-local BOX_TRANSPARENCY = 1       -- 1 = fully visible
-local FILL_BOX = false            -- true = filled semi-transparent box
+local BOX_THICKNESS = 1.5
+local BOX_TRANSPARENCY = 1
+local BOX_FILLED = false          -- true for filled box (semi-transparent if wanted)
+local BOX_FILL_TRANSPARENCY = 0.7 -- only if FILLED=true
 
-local espTable = {}  -- player -> {box = Drawing Square}
+local espObjects = {}  -- player -> {box = Drawing Square}
 
-local function isValidTarget(player)
-    if player == LocalPlayer then return false end
-    if not player.Character then return false end
-    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return false end
-    if TEAM_CHECK and player.Team == LocalPlayer.Team then return false end
-    return true
-end
-
-local function createESP(player)
-    if espTable[player] then return end
+local function createBoxForPlayer(player)
+    if player == LocalPlayer or espObjects[player] then return end
     
     local box = Drawing.new("Square")
-    box.Thickness = BOX_THICKNESS
-    box.Color = BOX_COLOR
-    box.Transparency = BOX_TRANSPARENCY
-    box.Filled = FILL_BOX
     box.Visible = false
+    box.Color = BOX_COLOR
+    box.Thickness = BOX_THICKNESS
+    box.Transparency = BOX_TRANSPARENCY
+    box.Filled = BOX_FILLED
     
-    espTable[player] = {box = box}
+    if BOX_FILLED then
+        box.Transparency = BOX_FILL_TRANSPARENCY  -- softer fill
+    end
+    
+    espObjects[player] = {box = box}
 end
 
-local function removeESP(player)
-    if espTable[player] then
-        espTable[player].box:Remove()
-        espTable[player] = nil
+local function destroyBoxForPlayer(player)
+    if espObjects[player] then
+        espObjects[player].box:Remove()
+        espObjects[player] = nil
     end
 end
 
-local function updateESP()
+local function isPlayerValid(player)
+    if not player or not player.Character then return false end
+    
+    local char = player.Character
+    local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    
+    if not humanoid or humanoid.Health <= 0 or not root or not head then
+        return false
+    end
+    
+    if TEAM_CHECK and player.Team == LocalPlayer.Team then
+        return false
+    end
+    
+    return true
+end
+
+local function updateAllBoxes()
     if not ESP_ENABLED then
-        for _, data in pairs(espTable) do
-            data.box.Visible = false
+        for _, obj in pairs(espObjects) do
+            obj.box.Visible = false
         end
         return
     end
 
-    for player, data in pairs(espTable) do
-        local char = player.Character
-        if isValidTarget(player) and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-            local root = char.HumanoidRootPart
+    for player, obj in pairs(espObjects) do
+        if isPlayerValid(player) then
+            local char = player.Character
             local head = char.Head
+            local root = char.HumanoidRootPart
             
-            -- Get 3D positions for top/bottom (extended a bit for better fit)
-            local top = head.Position + Vector3.new(0, 1, 0)     -- above head
-            local bottom = root.Position - Vector3.new(0, 3.5, 0) -- below feet approx
+            -- Extend bounds slightly for better visual fit
+            local topPos = head.Position + Vector3.new(0, 1.2, 0)    -- above head
+            local bottomPos = root.Position - Vector3.new(0, 3.8, 0) -- below feet
             
-            local topScreen, topVisible = Camera:WorldToViewportPoint(top)
-            local botScreen, botVisible = Camera:WorldToViewportPoint(bottom)
+            local topScreen, topOnScreen = Camera:WorldToViewportPoint(topPos)
+            local botScreen, botOnScreen = Camera:WorldToViewportPoint(bottomPos)
             
-            if topVisible and botVisible then
-                local sizeY = math.abs(topScreen.Y - botScreen.Y)
-                local sizeX = sizeY * 0.55  -- aspect ratio \~0.55 for humanoids (tweak if needed)
+            if topOnScreen and botOnScreen then
+                local height = math.abs(botScreen.Y - topScreen.Y)
+                local width = height * 0.6  -- universal aspect \~0.6 for Roblox rigs (tweak 0.55-0.65 if needed)
                 
                 local centerX = (topScreen.X + botScreen.X) / 2
                 local centerY = (topScreen.Y + botScreen.Y) / 2
                 
-                data.box.Size = Vector2.new(sizeX, sizeY)
-                data.box.Position = Vector2.new(centerX - sizeX/2, centerY - sizeY/2)
-                data.box.Visible = true
+                obj.box.Size = Vector2.new(width, height)
+                obj.box.Position = Vector2.new(centerX - width / 2, centerY - height / 2)
+                obj.box.Visible = true
             else
-                data.box.Visible = false
+                obj.box.Visible = false
             end
         else
-            data.box.Visible = false
+            obj.box.Visible = false
         end
     end
 end
 
--- Setup existing & new players
-for _, plr in ipairs(Players:GetPlayers()) do
-    createESP(plr)
+-- Initialize for existing players
+for _, player in ipairs(Players:GetPlayers()) do
+    createBoxForPlayer(player)
 end
 
-Players.PlayerAdded:Connect(createESP)
-Players.PlayerRemoving:Connect(removeESP)
+-- Handle new players
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        createBoxForPlayer(player)
+    end)
+end)
 
--- Toggle with Insert key (change to any Enum.KeyCode you want)
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
+-- Cleanup removed players
+Players.PlayerRemoving:Connect(destroyBoxForPlayer)
+
+-- Toggle with Insert (change KeyCode if you want)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.Insert then
         ESP_ENABLED = not ESP_ENABLED
         print("ESP Toggled: " .. (ESP_ENABLED and "ON" or "OFF"))
     end
 end)
 
--- Render loop
-RunService.RenderStepped:Connect(updateESP)
+-- Main update loop (RenderStepped for smooth visuals)
+RunService.RenderStepped:Connect(updateAllBoxes)
 
--- Cleanup on script end (optional but good)
+-- Optional cleanup on close
 game:BindToClose(function()
-    for player, _ in pairs(espTable) do
-        removeESP(player)
+    for player, _ in pairs(espObjects) do
+        destroyBoxForPlayer(player)
     end
 end)
 
-print("Grok Full 2D Box ESP loaded! Toggle with INSERT key. Customize at top.")
+print("Grok Universal 2D Box ESP loaded | Toggle: INSERT | Customize at top of script")
